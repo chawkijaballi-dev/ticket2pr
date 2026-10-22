@@ -44,14 +44,17 @@ flowchart LR
 
 ```text
 queued ──► running ──► succeeded      PR opened, tests green
-                   ├─► needs_review   draft PR: tests red, or no tests found
+                   ├─► needs_review   PR opened but not verified: tests red or none found
+                   │                  (a draft unless drafts are disabled or unavailable)
                    ├─► failed         no PR: agent error/budget, no diff, policy violation, …
                    └─► skipped        ticket lacks the trigger label
 ```
 
 `JobStore.claim` creates the `queued` row inside a `BEGIN IMMEDIATE` transaction and refuses
 when the ticket already has a queued or running job, so duplicate webhooks are harmless.
-On startup, the service marks jobs left `queued`/`running` by a crash as `failed`.
+On startup, the service re-enqueues `queued` jobs and marks the ones a crash left `running`
+as `failed`. A graceful stop cancels in-flight runs, which record themselves as failed
+("interrupted") so their tickets can be processed again.
 
 ## Budget and retries
 

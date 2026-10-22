@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -145,8 +145,9 @@ def claim(store: JobStore, key: str) -> Job:
 
 
 @pytest.fixture
-def store(settings: Settings) -> JobStore:
-    return JobStore(settings.db_path)
+def store(settings: Settings) -> Iterator[JobStore]:
+    with JobStore(settings.db_path) as job_store:
+        yield job_store
 
 
 @pytest.fixture

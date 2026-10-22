@@ -133,7 +133,7 @@ class JobStatus(StrEnum):
     SUCCEEDED = "succeeded"  # PR opened, tests green
     NEEDS_REVIEW = "needs_review"  # draft PR opened, tests red or not run
     FAILED = "failed"  # no PR opened
-    SKIPPED = "skipped"  # nothing to do (label missing, duplicate, ...)
+    SKIPPED = "skipped"  # the ticket lacks the trigger label
 
     @property
     def terminal(self) -> bool:

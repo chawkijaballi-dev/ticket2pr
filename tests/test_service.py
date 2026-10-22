@@ -229,6 +229,23 @@ def test_startup_fails_interrupted_jobs(
         assert runtime.store.list()[0].status is JobStatus.FAILED
 
 
+def test_startup_resumes_queued_jobs(
+    service_settings: Settings, tickets_dir: Path, repos_dir: Path
+) -> None:
+    def factory(settings: Settings) -> Runtime:
+        runtime = build_runtime(
+            settings, tickets_dir=tickets_dir, repos_dir=repos_dir, agent=ScriptedAgent([fix_add])
+        )
+        runtime.store.claim("CALC-1", None)  # left queued by a previous process
+        return runtime
+
+    with TestClient(create_app(service_settings, runtime_factory=factory)) as test_client:
+        queue: JobQueue = test_client.app.state.queue  # type: ignore[attr-defined]
+        test_client.portal.call(queue.join)  # type: ignore[union-attr]
+        runtime: Runtime = test_client.app.state.runtime  # type: ignore[attr-defined]
+        assert runtime.store.list()[0].status is JobStatus.SUCCEEDED
+
+
 # ── queue ───────────────────────────────────────────────────────────────
 
 
@@ -323,17 +340,27 @@ def test_cli_invalid_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "Invalid configuration" in result.output
 
 
-def test_cli_doctor_reports_missing_config(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_doctor_reports_missing_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))  # no `claude` login either
     result = runner.invoke(cli.app, ["doctor"])
     assert result.exit_code == 1
     assert "✗" in result.output
     assert "GitHub token" in result.output
 
 
-def test_cli_doctor_all_green(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("credential", ["api_key", "claude_login"])
+def test_cli_doctor_all_green(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, credential: str
+) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    if credential == "api_key":
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    else:
+        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".claude" / ".credentials.json").write_text("{}")
     for name, value in {
-        "ANTHROPIC_API_KEY": "k",
         "T2P_JIRA_BASE_URL": "https://a.atlassian.net",
         "T2P_JIRA_EMAIL": "a@b.c",
         "T2P_JIRA_API_TOKEN": "t",
@@ -375,9 +402,12 @@ def test_cli_serve_starts_uvicorn(monkeypatch: pytest.MonkeyPatch) -> None:
     for name, value in PRODUCTION_ENV.items():
         monkeypatch.setenv(name, value)
     calls: list[tuple[str, int]] = []
-    monkeypatch.setattr(
-        "uvicorn.run", lambda app, host, port, log_config: calls.append((host, port))
-    )
+
+    def fake_run(app: Any, host: str, port: int, log_config: Any) -> None:
+        calls.append((host, port))
+        app.state.runtime.store.close()  # the lifespan that would close it never runs
+
+    monkeypatch.setattr("uvicorn.run", fake_run)
     result = runner.invoke(cli.app, ["serve", "--port", "9999"])
     assert result.exit_code == 0, result.output
     assert calls == [("127.0.0.1", 9999)]

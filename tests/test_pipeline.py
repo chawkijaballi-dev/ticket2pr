@@ -25,8 +25,11 @@ from conftest import (
 from ticket2pr.agent.base import AgentTask
 from ticket2pr.config import Settings
 from ticket2pr.domain import AgentOutcome, AgentResult, Job, JobStatus
-from ticket2pr.pipeline import RunOptions
+from ticket2pr.pipeline import Pipeline, RunOptions
+from ticket2pr.scm.git import GitRepo
+from ticket2pr.scm.host import LocalHost
 from ticket2pr.store import JobStore
+from ticket2pr.trackers.local import LocalTracker
 
 
 def _pr(job: Job) -> dict[str, Any]:
@@ -468,3 +471,27 @@ async def test_bytecode_caches_are_never_committed(
     job = await make_pipeline(ScriptedAgent([fix_and_leave_caches])).run(claim(store, "CALC-1"))
     files = git(repos_dir / REPO, "show", "--name-only", "--format=", _branch(job)).split()
     assert files == ["calc.py"]
+
+
+async def test_relative_data_dir_works(
+    settings: Settings, store: JobStore, repos_dir: Path, tickets_dir: Path
+) -> None:
+    """The default data dir is relative; git runs in other directories than ours."""
+    relative = settings.model_copy(update={"data_dir": Path(".ticket2pr")})
+    relative = Settings.model_validate(relative.model_dump())  # re-run the validators
+    assert relative.data_dir.is_absolute()
+    pipeline = Pipeline(
+        settings=relative,
+        tracker=LocalTracker(tickets_dir),
+        host=LocalHost(repos_dir),
+        agent=ScriptedAgent([fix_add]),
+        store=store,
+    )
+    job = await pipeline.run(claim(store, "CALC-1"))
+    assert job.status is JobStatus.SUCCEEDED, job.error
+
+
+async def test_clone_into_a_relative_path(repos_dir: Path, tmp_path: Path) -> None:
+    repo = await GitRepo.clone((repos_dir / REPO).as_uri(), Path("rel") / "ws", branch="main")
+    assert repo.path == tmp_path / "rel" / "ws"  # tests run with cwd = tmp_path
+    assert (repo.path / "calc.py").exists()

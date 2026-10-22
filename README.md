@@ -26,7 +26,7 @@ trustworthy, and what reviewers see.
 | Concern | What ticket2pr does |
 |---|---|
 | **Cost** | Hard per-ticket budget (`max_budget_usd`) enforced by the SDK and shared across retries; tokens and dollars are reported on the PR, on the ticket and in the job history. |
-| **Correctness** | Runs the repository's tests after the agent; a failing run gets one retry with the failure output; still red means a **draft** PR (kept in sync on re-runs), never a green one. |
+| **Correctness** | Runs the repository's tests after the agent; a failing run gets one retry with the failure output; still red means a **draft** PR (kept in sync on re-runs; a regular PR flagged as failing when drafts are disabled with `T2P_DRAFT_ON_TEST_FAILURE=false` or unavailable on the GitHub plan), never a green one. |
 | **Isolation** | Fresh clone per job; the agent's Bash *and* the repository's tests run in a bubblewrap sandbox (fresh PID namespace, no access to the service's home or secrets, network allowlist / off), which **fails closed** if it cannot start; a `PreToolUse` guard; no repository settings or hooks loaded; credentials scrubbed from every environment the agent or the tests can see. |
 | **Supply chain** | The agent never touches what gets pushed: its tree is copied into a fresh *publish clone* (no `.git` from the agent), committed and pushed there with global config, hooks and fsmonitor disabled. Protected paths (CI, `.env`, keys) are never committed, and a change containing a configured secret is refused. |
 | **Measurability** | A SWE-bench-style eval suite with hidden tests reports resolve rate and **cost per resolved ticket**. |

@@ -11,17 +11,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_MODEL = "claude-opus-5-5"
 
-# Secrets the worker process needs but the agent must never see. They are blanked in the
-# agent's environment (see ``agent.claude``) so a ``Bash`` call such as ``env`` cannot leak them.
-SECRET_ENV_VARS: tuple[str, ...] = (
-    "T2P_JIRA_API_TOKEN",
-    "T2P_JIRA_WEBHOOK_SECRET",
-    "T2P_GITHUB_TOKEN",
-    "T2P_API_TOKEN",
-    "GITHUB_TOKEN",
-    "GH_TOKEN",
-)
-
 _REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _PROJECT_RE = re.compile(r"^[A-Z][A-Z0-9_]+$")
 
@@ -139,6 +128,12 @@ class Settings(BaseSettings):
                 raise ValueError(f"invalid GitHub repo for {project}: {repo!r} (want owner/name)")
         return value
 
+    @field_validator("data_dir")
+    @classmethod
+    def _absolute_data_dir(cls, value: Path) -> Path:
+        # Workspaces are handed to git and to subprocesses with other working directories.
+        return value.expanduser().resolve()
+
     @field_validator("jira_base_url", "github_api_url")
     @classmethod
     def _strip_trailing_slash(cls, value: str) -> str:
@@ -156,3 +151,27 @@ class Settings(BaseSettings):
         """Return the GitHub repo configured for the ticket's Jira project, if any."""
         project = ticket_key.split("-", 1)[0]
         return self.repos.get(project)
+
+
+# Credentials of other tools that may sit in the worker's environment.
+_EXTRA_SECRET_ENV_VARS = ("GITHUB_TOKEN", "GH_TOKEN")
+# The Claude CLI itself needs this one; Claude Code strips it from the agent's commands.
+_CLI_CREDENTIAL = "ANTHROPIC_API_KEY"
+
+
+def secret_env_names() -> tuple[str, ...]:
+    """Every environment variable that can carry a ticket2pr secret.
+
+    Derived from the ``SecretStr`` settings (with their aliases), so a new secret setting is
+    hidden from the agent without anyone having to remember a second list.
+    """
+    names: set[str] = set(_EXTRA_SECRET_ENV_VARS)
+    for name, field in Settings.model_fields.items():
+        if field.annotation is not SecretStr:
+            continue
+        names.add(f"T2P_{name.upper()}")
+        alias = field.validation_alias
+        if isinstance(alias, AliasChoices):
+            names.update(choice for choice in alias.choices if isinstance(choice, str))
+    names.discard(_CLI_CREDENTIAL)
+    return tuple(sorted(names))

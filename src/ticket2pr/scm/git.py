@@ -62,6 +62,7 @@ class GitRepo:
     async def clone(
         cls, url: str, dest: Path, *, branch: str, auth: GitAuth | None = None, depth: int = 50
     ) -> GitRepo:
+        dest = await asyncio.to_thread(dest.resolve)  # git runs in dest.parent
         dest.parent.mkdir(parents=True, exist_ok=True)
         await _git(
             dest.parent,

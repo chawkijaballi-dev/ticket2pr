@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -80,8 +81,9 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.repo_for("OTHER-3") is None
     assert settings.jira_base_url == "https://acme.atlassian.net"
     assert settings.max_budget_usd == 1.5
-    assert settings.db_path == Path(".ticket2pr/jobs.sqlite3")
-    assert settings.workspaces_dir == Path(".ticket2pr/workspaces")
+    # Relative data dirs are made absolute: workspaces are handed to git and subprocesses.
+    assert settings.db_path == Path.cwd() / ".ticket2pr" / "jobs.sqlite3"
+    assert settings.workspaces_dir == Path.cwd() / ".ticket2pr" / "workspaces"
 
 
 @pytest.mark.parametrize("repos", [{"proj": "acme/api"}, {"PROJ": "not-a-repo"}, {"PROJ": "a/b/c"}])
@@ -132,8 +134,14 @@ def test_store_claim_is_exclusive_per_ticket(tmp_path: Path) -> None:
         assert store.claim("PROJ-1", None) is not None  # finished jobs do not
 
 
-def test_store_claim_under_concurrency() -> None:
-    store = JobStore(":memory:")
+@pytest.fixture
+def memory_store() -> Iterator[JobStore]:
+    with JobStore(":memory:") as store:
+        yield store
+
+
+def test_store_claim_under_concurrency(memory_store: JobStore) -> None:
+    store = memory_store
     results: list[Job | None] = []
 
     def claim() -> None:
@@ -147,8 +155,8 @@ def test_store_claim_under_concurrency() -> None:
     assert sum(job is not None for job in results) == 1
 
 
-def test_store_round_trip_and_listing() -> None:
-    store = JobStore(":memory:")
+def test_store_round_trip_and_listing(memory_store: JobStore) -> None:
+    store = memory_store
     job = store.claim("PROJ-1", "acme/api")
     assert job is not None
     job.status = JobStatus.NEEDS_REVIEW
@@ -168,20 +176,21 @@ def test_store_round_trip_and_listing() -> None:
     assert len(store.list(limit=1)) == 1
 
 
-def test_store_save_requires_id() -> None:
+def test_store_save_requires_id(memory_store: JobStore) -> None:
     with pytest.raises(ValueError, match="persisted"):
-        JobStore(":memory:").save(Job(ticket_key="PROJ-1"))
+        memory_store.save(Job(ticket_key="PROJ-1"))
 
 
-def test_store_fail_interrupted() -> None:
-    store = JobStore(":memory:")
+def test_store_fail_interrupted(memory_store: JobStore) -> None:
+    store = memory_store
     running = store.claim("PROJ-1", None)
     assert running is not None
     running.status = JobStatus.RUNNING
     store.save(running)
     store.claim("PROJ-2", None)
-    assert store.fail_interrupted() == 2
-    assert all(job.status is JobStatus.FAILED for job in store.list())
+    assert store.fail_interrupted() == 1  # queued jobs are re-enqueued, not failed
+    statuses = {job.ticket_key: job.status for job in store.list()}
+    assert statuses == {"PROJ-1": JobStatus.FAILED, "PROJ-2": JobStatus.QUEUED}
 
 
 # ── verify ──────────────────────────────────────────────────────────────
@@ -292,14 +301,13 @@ def test_pr_body_without_tests_or_summary() -> None:
 @pytest.mark.parametrize(
     ("tests", "expected"),
     [
-        (None, "No tests were run"),
         (TestReport(command=None, passed=False), "No tests were run"),
         (TestReport(command="pytest", passed=True), "Tests pass"),
         (TestReport(command="pytest", passed=False), "Tests fail"),
     ],
 )
-def test_tracker_comment_with_pr(tests: TestReport | None, expected: str) -> None:
-    text = render.tracker_comment(pr=PR, tests=tests, usage=USAGE)
+def test_tracker_comment_with_pr(tests: TestReport, expected: str) -> None:
+    text = render.tracker_comment(published=(PR, tests), usage=USAGE)
     assert expected in text
     assert "$1.23" in text
     assert "opened a pull request" in text
@@ -308,15 +316,17 @@ def test_tracker_comment_with_pr(tests: TestReport | None, expected: str) -> Non
 def test_tracker_comment_names_drafts_and_capped_costs() -> None:
     draft = PullRequest(number=1, url="https://x.test/pr/1", draft=True)
     capped = Usage(cost_usd=2.0, cost_capped=True)
-    text = render.tracker_comment(pr=draft, tests=None, usage=capped)
+    text = render.tracker_comment(
+        published=(draft, TestReport(command="pytest", passed=False)), usage=capped
+    )
     assert "opened a draft pull request" in text
     assert "≤ $2.00" in text
 
 
 def test_tracker_comment_on_failure() -> None:
-    text = render.tracker_comment(pr=None, tests=None, usage=USAGE, error="boom")
+    text = render.tracker_comment(published=None, usage=USAGE, error="boom")
     assert "could not open a pull request: boom" in text
-    assert "unknown error" in render.tracker_comment(pr=None, tests=None, usage=USAGE)
+    assert "unknown error" in render.tracker_comment(published=None, usage=USAGE)
 
 
 def test_configuration_docs_are_up_to_date() -> None:

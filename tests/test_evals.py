@@ -83,6 +83,8 @@ def test_cli_eval_oracle_writes_report(tmp_path: Path, monkeypatch: pytest.Monke
 
 def test_cli_eval_rejects_bad_input(tmp_path: Path) -> None:
     runner = CliRunner()
+    missing = runner.invoke(cli.app, ["eval", "--tasks-dir", str(tmp_path / "nope")])
+    assert missing.exit_code == 2  # typer: "Directory ... does not exist"
     assert runner.invoke(cli.app, ["eval", "--agent", "gpt"]).exit_code == 2
     result = runner.invoke(cli.app, ["eval", "--tasks-dir", str(TASKS), "--task", "nope"])
     assert result.exit_code == 2

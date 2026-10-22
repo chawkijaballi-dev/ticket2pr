@@ -1,8 +1,9 @@
 """In-process job queue: a fixed pool of asyncio workers draining a FIFO.
 
-Deliberately simple. Jobs are persisted in SQLite before they are queued, so a crash loses at
-most the in-flight runs, which ``JobStore.fail_interrupted`` marks as failed on restart.
-Swapping this for Celery/RQ/Arq only means re-implementing ``submit``.
+Deliberately simple. Jobs are persisted in SQLite before they are queued: on start the
+service re-enqueues the ``queued`` ones, and the runs a crash cut short (left ``running``)
+are marked failed. A graceful stop cancels in-flight runs, which record themselves as
+interrupted. Swapping this for Celery/RQ/Arq only means re-implementing ``submit``.
 """
 
 from __future__ import annotations
@@ -40,12 +41,16 @@ class JobQueue:
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks = []
 
-    def submit(self, ticket_key: str, *, repo: str | None = None) -> Job | None:
+    def submit(self, ticket_key: str) -> Job | None:
         """Persist and enqueue a job. ``None`` when the ticket already has one in flight."""
-        job = self._store.claim(ticket_key, repo)
+        job = self._store.claim(ticket_key, None)
         if job is not None:
-            self._queue.put_nowait((job, RunOptions()))
+            self.enqueue(job)
         return job
+
+    def enqueue(self, job: Job) -> None:
+        """Queue an already persisted job (e.g. one left ``queued`` by a previous process)."""
+        self._queue.put_nowait((job, RunOptions()))
 
     async def join(self) -> None:
         await self._queue.join()

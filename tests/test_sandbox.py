@@ -104,14 +104,42 @@ async def _run(command: str, workspace: Path, sandbox: TestSandbox) -> str:
     return report.output_tail
 
 
+_PROBE = """
+import asyncio, sys
+from pathlib import Path
+from ticket2pr.sandbox import TestSandbox
+from ticket2pr.verify import run_tests
+
+sandbox = None if sys.argv[2] == "none" else TestSandbox(
+    hidden=(), readonly=(Path(sys.prefix), Path(sys.base_prefix))
+)
+command = "grep -qs ghp_must_not_leak /proc/*/environ && echo LEAK || echo CLEAN"
+report = asyncio.run(run_tests(command, Path(sys.argv[1]), timeout_s=30, sandbox=sandbox))
+print(report.output_tail.strip())
+"""
+
+
+def _probe(workspace: Path, mode: str) -> str:
+    """Run the check from a process whose *exec-time* environment holds the secret.
+
+    ``os.environ`` changes never reach ``/proc/<pid>/environ``, so the secret must be in
+    the environment the probing process was started with.
+    """
+    env = {**os.environ, "T2P_GITHUB_TOKEN": "ghp_must_not_leak"}
+    done = subprocess.run(
+        [sys.executable, "-c", _PROBE, str(workspace), mode],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return done.stdout.strip()
+
+
 @needs_bwrap
-async def test_sandbox_hides_the_parent_environment(
-    workspace: Path, sandbox: TestSandbox, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("T2P_GITHUB_TOKEN", "ghp_must_not_leak")
-    # Every /proc/<pid>/environ the tests can see, including their parent's.
-    output = await _run("cat /proc/*/environ 2>/dev/null; echo; ls /proc", workspace, sandbox)
-    assert "ghp_must_not_leak" not in output
+def test_sandbox_hides_the_parent_environment(workspace: Path) -> None:
+    assert _probe(workspace, "none") == "LEAK"  # control: without the sandbox, it leaks
+    assert _probe(workspace, "sandbox") == "CLEAN"
 
 
 @needs_bwrap

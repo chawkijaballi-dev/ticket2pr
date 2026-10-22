@@ -81,19 +81,20 @@ def _fence_for(text: str) -> str:
 
 def tracker_comment(
     *,
-    pr: PullRequest | None,
-    tests: TestReport | None,
+    published: tuple[PullRequest, TestReport] | None,
     usage: Usage,
     error: str | None = None,
 ) -> str:
-    if pr is None:
+    """The ticket comment: the PR and how it was verified, or why there is none."""
+    if published is None:
         reason = error or "unknown error"
         return (
             f"ticket2pr could not open a pull request: {reason}\n\n"
             f"Spent {usage.cost_label} over {usage.turns} agent turns."
         )
+    pr, tests = published
     kind = "draft pull request" if pr.draft else "pull request"
-    if tests is None or not tests.ran:
+    if not tests.ran:
         status = "No tests were run: review this change carefully."
     elif tests.passed:
         status = f"Tests pass (`{tests.command}`)."

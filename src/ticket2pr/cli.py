@@ -156,8 +156,8 @@ def doctor() -> None:
     settings = _settings()
     checks = {
         "git on PATH": shutil.which("git") is not None,
-        "Claude credentials (ANTHROPIC_API_KEY)": bool(
-            settings.anthropic_api_key.get_secret_value() or os.environ.get("ANTHROPIC_API_KEY")
+        "Claude credentials (API key, auth token or `claude` login)": _has_claude_credentials(
+            settings
         ),
         "Jira configured": bool(
             settings.jira_base_url
@@ -177,7 +177,10 @@ def doctor() -> None:
 
 @app.command("eval")
 def eval_(
-    tasks_dir: Annotated[Path, typer.Option(help="Directory of eval tasks.")] = Path("evals/tasks"),
+    tasks_dir: Annotated[
+        Path,
+        typer.Option(help="Directory of eval tasks.", exists=True, file_okay=False),
+    ] = Path("evals/tasks"),
     task: Annotated[list[str] | None, typer.Option(help="Run only these tasks.")] = None,
     agent: Annotated[
         str, typer.Option(help="'claude' (real, costs money) or 'oracle'.")
@@ -223,6 +226,15 @@ def eval_(
     if output is not None:
         output.write_text(summary.to_json(), encoding="utf-8")
     raise typer.Exit(0 if summary.resolve_rate == 1 else 1)
+
+
+def _has_claude_credentials(settings: Settings) -> bool:
+    """Any credential the Claude Agent SDK can use: a key, a token, or a `claude` login."""
+    if settings.anthropic_api_key.get_secret_value():
+        return True
+    if any(os.environ.get(name) for name in ("ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN")):
+        return True
+    return (Path.home() / ".claude" / ".credentials.json").is_file()
 
 
 def _print_job(job: Job) -> None:

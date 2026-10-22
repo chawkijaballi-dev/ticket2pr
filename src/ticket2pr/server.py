@@ -48,12 +48,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        interrupted = runtime.store.fail_interrupted()
-        if interrupted:
-            logger.warning("marked %d interrupted job(s) as failed", interrupted)
-        queue = JobQueue(pipeline=runtime.pipeline, store=runtime.store, workers=settings.workers)
-        queue.start()
-        app.state.runtime, app.state.queue = runtime, queue
+        queue = start_queue(runtime, workers=settings.workers)
+        app.state.queue = queue
         try:
             yield
         finally:
@@ -61,6 +57,7 @@ def create_app(
             await runtime.aclose()
 
     app = FastAPI(title="ticket2pr", version=__version__, lifespan=lifespan)
+    app.state.runtime = runtime
 
     def require_api_token(authorization: Annotated[str | None, Header()] = None) -> None:
         token = settings.api_token.get_secret_value()
@@ -122,6 +119,21 @@ def create_app(
         return job
 
     return app
+
+
+def start_queue(runtime: Runtime, *, workers: int) -> JobQueue:
+    """Recover what a previous process left behind, then start the workers."""
+    interrupted = runtime.store.fail_interrupted()
+    if interrupted:
+        logger.warning("marked %d interrupted job(s) as failed", interrupted)
+    queue = JobQueue(pipeline=runtime.pipeline, store=runtime.store, workers=workers)
+    pending = runtime.store.list(limit=10_000, status=JobStatus.QUEUED)
+    for job in reversed(pending):  # oldest first
+        queue.enqueue(job)
+    if pending:
+        logger.info("re-enqueued %d queued job(s)", len(pending))
+    queue.start()
+    return queue
 
 
 async def read_limited(request: Request, limit: int) -> bytes:

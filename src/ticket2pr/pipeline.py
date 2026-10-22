@@ -276,8 +276,7 @@ class Pipeline:
 
     async def _report(self, job: Job, outcome: _Outcome | None) -> None:
         comment = render.tracker_comment(
-            pr=outcome.pr if outcome else None,
-            tests=outcome.tests if outcome else None,
+            published=(outcome.pr, outcome.tests) if outcome else None,
             usage=job.usage,
             error=job.error,
         )

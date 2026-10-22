@@ -25,7 +25,7 @@ from claude_agent_sdk import (
 from ticket2pr.agent.base import AgentTask
 from ticket2pr.agent.guard import Policy
 from ticket2pr.agent.prompts import SYSTEM_PROMPT, build_prompt
-from ticket2pr.config import SECRET_ENV_VARS, Effort
+from ticket2pr.config import Effort, secret_env_names
 from ticket2pr.domain import AgentOutcome, AgentResult, Usage
 from ticket2pr.sandbox import ensure_sandbox_available
 
@@ -153,7 +153,7 @@ class ClaudeAgent:
             # (ANTHROPIC_API_KEY, ...) from the environment of every command the agent runs.
             # PYTHONDONTWRITEBYTECODE keeps the agent's own test runs from leaving caches behind.
             env={
-                **dict.fromkeys(SECRET_ENV_VARS, ""),
+                **dict.fromkeys(secret_env_names(), ""),
                 **({"ANTHROPIC_API_KEY": self._api_key} if self._api_key else {}),
                 "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
                 "PYTHONDONTWRITEBYTECODE": "1",

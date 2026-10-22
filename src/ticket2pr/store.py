@@ -129,11 +129,14 @@ class JobStore:
         return [_to_job(row) for row in rows]
 
     def fail_interrupted(self, reason: str = "interrupted by a service restart") -> int:
-        """Mark jobs left queued/running by a crashed process as failed. Returns the count."""
+        """Mark jobs a previous process left ``running`` as failed. Returns the count.
+
+        Queued jobs are untouched: the service re-enqueues them on start.
+        """
         with self._lock:
             cursor = self._conn.execute(
-                "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE status IN (?, ?)",
-                (JobStatus.FAILED.value, reason, utcnow().isoformat(), *_ACTIVE),
+                "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE status = ?",
+                (JobStatus.FAILED.value, reason, utcnow().isoformat(), JobStatus.RUNNING.value),
             )
         return cursor.rowcount
 

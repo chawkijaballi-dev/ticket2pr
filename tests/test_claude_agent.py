@@ -17,10 +17,11 @@ from claude_agent_sdk import (
     ResultMessage,
     TextBlock,
 )
+from pydantic import SecretStr
 
 from ticket2pr.agent.base import AgentTask
 from ticket2pr.agent.claude import ALLOWED_TOOLS, ClaudeAgent, usage_from_result
-from ticket2pr.config import SECRET_ENV_VARS
+from ticket2pr.config import Settings, secret_env_names
 from ticket2pr.domain import AgentOutcome, Ticket
 from ticket2pr.errors import ConfigurationError
 
@@ -214,9 +215,21 @@ async def test_options_lock_down_the_agent(task: AgentTask) -> None:
     assert options.sandbox["enabled"] is True
     assert options.sandbox["allowUnsandboxedCommands"] is False
     assert options.sandbox["network"] == {"allowedDomains": ["pypi.org"]}
-    assert all(options.env[name] == "" for name in SECRET_ENV_VARS)
+    assert all(options.env[name] == "" for name in secret_env_names())
     assert options.env["CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"] == "1"
     assert options.env["PYTHONDONTWRITEBYTECODE"] == "1"
+
+
+def test_every_secret_setting_is_hidden_from_the_agent() -> None:
+    names = secret_env_names()
+    secret_fields = [
+        name for name, field in Settings.model_fields.items() if field.annotation is SecretStr
+    ]
+    assert secret_fields  # the check below must not pass vacuously
+    for field in secret_fields:
+        assert f"T2P_{field.upper()}" in names
+    assert "T2P_ANTHROPIC_API_KEY" in names
+    assert "ANTHROPIC_API_KEY" not in names  # the CLI needs it; Claude Code scrubs it itself
 
 
 async def test_bash_sandbox_can_be_disabled(task: AgentTask) -> None:
