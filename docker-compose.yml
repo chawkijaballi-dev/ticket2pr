@@ -1,0 +1,26 @@
+# Local deployment: `cp .env.example .env`, fill it in, then `docker compose up --build`.
+# Expose port 8080 to Jira through your ingress / tunnel and point the webhook at
+# https://<host>/webhooks/jira with the same secret as T2P_JIRA_WEBHOOK_SECRET.
+services:
+  ticket2pr:
+    build: .
+    env_file: .env
+    environment:
+      # bubblewrap cannot create namespaces in an unprivileged container: the container is the
+      # sandbox here. Restrict its egress at the network layer (see docs/security.md).
+      T2P_BASH_SANDBOX: "false"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ticket2pr-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/ticket2pr  # Claude Code keeps session state under $HOME
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+volumes:
+  ticket2pr-data:

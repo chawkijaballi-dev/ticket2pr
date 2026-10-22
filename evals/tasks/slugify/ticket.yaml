@@ -1,0 +1,9 @@
+key: BLOG-12
+title: Post URLs break on accented titles
+type: Story
+labels: [ticket2pr]
+description: |
+  `slugify("Crème brûlée à Paris")` currently returns `"cr-me-br-l-e-paris"` because accented
+  letters are dropped. Transliterate them instead: the expected slug is
+  `"creme-brulee-a-paris"`. Keep the existing rules (lowercase, runs of non-alphanumerics
+  become a single "-", no leading/trailing "-"). Use only the standard library.

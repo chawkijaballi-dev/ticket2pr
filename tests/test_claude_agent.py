@@ -1,0 +1,242 @@
+from __future__ import annotations
+
+import asyncio
+from collections.abc import AsyncIterator
+from pathlib import Path
+from typing import Any, cast
+
+import pytest
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    CLIConnectionError,
+    HookCallback,
+    HookContext,
+    HookInput,
+    ResultMessage,
+    TextBlock,
+)
+
+from ticket2pr.agent.base import AgentTask
+from ticket2pr.agent.claude import ALLOWED_TOOLS, ClaudeAgent, usage_from_result
+from ticket2pr.config import SECRET_ENV_VARS
+from ticket2pr.domain import AgentOutcome, Ticket
+
+
+def _result(subtype: str = "success", **overrides: Any) -> ResultMessage:
+    fields: dict[str, Any] = {
+        "subtype": subtype,
+        "duration_ms": 90_000,
+        "duration_api_ms": 80_000,
+        "is_error": subtype != "success",
+        "num_turns": 7,
+        "session_id": "sess-1",
+        "total_cost_usd": 1.25,
+        "usage": {
+            "input_tokens": 1200,
+            "output_tokens": 340,
+            "cache_read_input_tokens": 5000,
+            "cache_creation_input_tokens": 800,
+        },
+        "result": "## Summary\nDone.",
+    }
+    return ResultMessage(**{**fields, **overrides})
+
+
+def _agent(query_fn: Any, **overrides: Any) -> ClaudeAgent:
+    params: dict[str, Any] = {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "max_budget_usd": 3.0,
+        "max_turns": 50,
+        "timeout_s": 5,
+        "protected_globs": (".github/",),
+        "network_allowlist": ("pypi.org",),
+        "query_fn": query_fn,
+    }
+    return ClaudeAgent(**{**params, **overrides})
+
+
+@pytest.fixture
+def task(tmp_path: Path) -> AgentTask:
+    return AgentTask(
+        ticket=Ticket(key="PROJ-1", title="Fix it", description="Broken."),
+        workspace=tmp_path,
+        test_command="pytest -q",
+        budget_usd=1.5,
+    )
+
+
+class Recorder:
+    def __init__(self, *messages: Any) -> None:
+        self.messages = messages
+        self.calls: list[tuple[str, ClaudeAgentOptions]] = []
+
+    def __call__(self, *, prompt: str, options: ClaudeAgentOptions) -> AsyncIterator[Any]:
+        self.calls.append((prompt, options))
+        return self._stream()
+
+    async def _stream(self) -> AsyncIterator[Any]:
+        for message in self.messages:
+            yield message
+
+
+async def test_success_maps_usage_and_summary(task: AgentTask) -> None:
+    query = Recorder(
+        AssistantMessage(content=[TextBlock(text="Working on it")], model="claude-opus-5-5"),
+        _result(),
+    )
+    result = await _agent(query).run(task)
+
+    assert result.outcome is AgentOutcome.COMPLETED
+    assert result.ok
+    assert result.summary == "## Summary\nDone."
+    assert result.session_id == "sess-1"
+    assert result.usage.cost_usd == 1.25
+    assert result.usage.cache_read_tokens == 5000
+    assert result.usage.turns == 7
+    assert result.usage.duration_s == 90.0
+    prompt, _ = query.calls[0]
+    assert "PROJ-1" in prompt
+    assert "pytest -q" in prompt
+
+
+@pytest.mark.parametrize(
+    ("subtype", "outcome"),
+    [
+        ("error_max_turns", AgentOutcome.MAX_TURNS),
+        ("error_max_budget_usd", AgentOutcome.BUDGET_EXCEEDED),
+        ("error_during_execution", AgentOutcome.ERROR),
+    ],
+)
+async def test_error_subtypes(task: AgentTask, subtype: str, outcome: AgentOutcome) -> None:
+    result = await _agent(Recorder(_result(subtype, result=None))).run(task)
+    assert result.outcome is outcome
+    assert not result.ok
+
+
+async def test_summary_falls_back_to_last_assistant_text(task: AgentTask) -> None:
+    query = Recorder(
+        AssistantMessage(content=[TextBlock(text="final words")], model="m"),
+        _result(result=None),
+    )
+    assert (await _agent(query).run(task)).summary == "final words"
+
+
+async def test_missing_result_message_is_an_error(task: AgentTask) -> None:
+    result = await _agent(Recorder()).run(task)
+    assert result.outcome is AgentOutcome.ERROR
+
+
+async def test_sdk_errors_are_contained(task: AgentTask) -> None:
+    def failing(**_: Any) -> AsyncIterator[Any]:
+        async def stream() -> AsyncIterator[Any]:
+            nothing: tuple[Any, ...] = ()
+            for message in nothing:  # makes this an (empty) async generator
+                yield message
+            raise CLIConnectionError("cli died")
+
+        return stream()
+
+    result = await _agent(failing).run(task)
+    assert result.outcome is AgentOutcome.ERROR
+    assert "cli died" in result.summary
+
+
+async def test_timeout(task: AgentTask) -> None:
+    def slow(**_: Any) -> AsyncIterator[Any]:
+        async def stream() -> AsyncIterator[Any]:
+            await asyncio.sleep(10)
+            yield _result()  # pragma: no cover
+
+        return stream()
+
+    result = await _agent(slow, timeout_s=0.05).run(task)
+    assert result.outcome is AgentOutcome.TIMEOUT
+
+
+async def test_options_lock_down_the_agent(task: AgentTask) -> None:
+    query = Recorder(_result())
+    await _agent(query).run(task)
+    _, options = query.calls[0]
+
+    assert options.model == "claude-opus-5-5"
+    assert options.effort == "high"
+    assert options.cwd == str(task.workspace)
+    assert options.permission_mode == "dontAsk"
+    assert options.setting_sources == []
+    assert options.allowed_tools == ALLOWED_TOOLS
+    assert "WebFetch" in options.disallowed_tools
+    assert options.max_turns == 50
+    assert options.max_budget_usd == 1.5  # the task's remaining budget wins when lower
+    assert options.sandbox is not None
+    assert options.sandbox["enabled"] is True
+    assert options.sandbox["allowUnsandboxedCommands"] is False
+    assert options.sandbox["network"] == {"allowedDomains": ["pypi.org"]}
+    assert all(options.env[name] == "" for name in SECRET_ENV_VARS)
+
+
+async def test_bash_sandbox_can_be_disabled(task: AgentTask) -> None:
+    query = Recorder(_result())
+    await _agent(query, bash_sandbox=False).run(task)
+    sandbox = query.calls[0][1].sandbox
+    assert sandbox is not None
+    assert sandbox["enabled"] is False
+
+
+async def test_agent_budget_caps_task_budget(task: AgentTask) -> None:
+    query = Recorder(_result())
+    big = AgentTask(ticket=task.ticket, workspace=task.workspace, budget_usd=99.0)
+    await _agent(query).run(big)
+    assert query.calls[0][1].max_budget_usd == 3.0
+
+
+def _bash_call(command: str) -> HookInput:
+    return cast(
+        "HookInput",
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "tool_use_id": "t1",
+            "session_id": "s",
+            "transcript_path": "",
+            "cwd": "",
+        },
+    )
+
+
+def _guard(options: ClaudeAgentOptions) -> HookCallback:
+    assert options.hooks is not None
+    return options.hooks["PreToolUse"][0].hooks[0]
+
+
+CTX: HookContext = {"signal": None}
+
+
+async def test_guard_hook_denies_and_records(task: AgentTask) -> None:
+    query = Recorder(_result())
+    await _agent(query).run(task)
+    hook = _guard(query.calls[0][1])
+
+    denied: dict[str, Any] = dict(await hook(_bash_call("git push"), "t1", CTX))
+    assert denied["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert await hook(_bash_call("pytest"), "t2", CTX) == {}
+    stop = cast("HookInput", {"hook_event_name": "Stop"})
+    assert await hook(stop, None, CTX) == {}
+
+
+async def test_denied_actions_are_reported(task: AgentTask) -> None:
+    class DenyingQuery(Recorder):
+        async def _stream(self) -> AsyncIterator[Any]:
+            await _guard(self.calls[-1][1])(_bash_call("env"), None, CTX)
+            yield _result()
+
+    result = await _agent(DenyingQuery()).run(task)
+    assert result.denied_actions == ("Bash: dumping the environment is not allowed",)
+
+
+def test_usage_from_result_tolerates_missing_fields() -> None:
+    usage = usage_from_result(_result(usage=None, total_cost_usd=None))
+    assert usage.cost_usd == 0.0
+    assert usage.total_tokens == 0

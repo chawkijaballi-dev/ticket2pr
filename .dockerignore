@@ -1,0 +1,14 @@
+.git
+.venv
+.ticket2pr
+.env
+**/__pycache__
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+tests
+evals
+docs
+PROGRESS.md

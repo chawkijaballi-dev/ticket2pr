@@ -1,0 +1,110 @@
+[project]
+name = "ticket2pr"
+version = "0.1.0"
+description = "Turn Jira tickets into review-ready GitHub pull requests with a budget-capped, sandboxed Claude agent."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Chawki JABALLI", email = "347353684+kweka2026@users.noreply.github.com" }]
+requires-python = ">=3.12"
+keywords = ["ai", "agents", "claude", "jira", "github", "code-generation", "devtools"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Code Generators",
+    "Typing :: Typed",
+]
+dependencies = [
+    "claude-agent-sdk>=0.2.172",
+    "fastapi>=0.161.0",
+    "httpx>=0.28.1",
+    "pydantic>=2.14.1",
+    "pydantic-settings>=2.16.1",
+    "pyyaml>=6.0.2",
+    "rich>=15.0.0",
+    "typer>=0.27.3",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+ticket2pr = "ticket2pr.cli:app"
+
+[project.urls]
+Documentation = "https://github.com/OWNER/ticket2pr#readme"
+Source = "https://github.com/OWNER/ticket2pr"
+Issues = "https://github.com/OWNER/ticket2pr/issues"
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.0",
+    "pre-commit>=4.0.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "respx>=0.23.1",
+    "ruff>=0.17.2",
+    "types-pyyaml>=6.0.12",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests", "scripts"]
+extend-exclude = ["evals/tasks"]  # fixture repositories, deliberately buggy
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "B", "UP", "SIM", "C4", "RUF", "N", "S", "ASYNC",
+    "PT", "PTH", "RET", "TRY", "PL", "PERF", "ANN", "BLE", "FBT", "DTZ", "LOG",
+]
+ignore = [
+    "PLR0913", # explicit keyword-only constructors are clearer than config bags
+    "TRY003",  # contextual exception messages are intentional
+    "S603",    # subprocess calls never use a shell and take argv lists
+    "ANN401",  # JSON payloads from Jira/GitHub are genuinely untyped at the boundary
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S108", "S607", "ANN", "PLR2004", "FBT", "ASYNC240"]
+"src/ticket2pr/cli.py" = ["FBT001", "FBT002", "PLR0917"]  # typer maps parameters to options
+
+[tool.ruff.lint.pylint]
+max-returns = 8  # validators read best as a flat list of early returns
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+files = ["src", "tests", "scripts"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+markers = ["live: hits real Claude / Jira / GitHub APIs (opt-in, needs credentials)"]
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["ticket2pr"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "@overload", "raise NotImplementedError"]

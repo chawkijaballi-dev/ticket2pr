@@ -1,0 +1,11 @@
+key: NET-33
+title: Add a retry decorator for flaky HTTP calls
+type: Story
+labels: [ticket2pr]
+description: |
+  Add `retry(attempts=3, exceptions=(Exception,), delay=0.0)` to `net/retry.py`.
+  It decorates a function and re-calls it when it raises one of `exceptions`, up to
+  `attempts` calls in total, sleeping `delay` seconds between calls (use `time.sleep`).
+  Exceptions not listed propagate immediately. When every attempt fails, re-raise the last
+  exception. `attempts < 1` raises `ValueError` at decoration time. Preserve the wrapped
+  function's name and docstring.

@@ -1,0 +1,9 @@
+key: SHOP-101
+title: Page 2 of the product list repeats the last item of page 1
+type: Bug
+labels: [ticket2pr]
+description: |
+  `paginate(items, page=2, size=10)` returns items 9..18 instead of 10..19, so the last
+  product of page 1 shows up again at the top of page 2. Pages are 1-based.
+  Requesting a page past the end should return an empty list, and `page < 1` or
+  `size < 1` should raise `ValueError`.

@@ -1,0 +1,10 @@
+key: OPS-7
+title: FEATURE_X=false still enables feature X
+type: Bug
+labels: [ticket2pr]
+description: |
+  `env_flag("FEATURE_X")` returns True whenever the variable is set, even to "false" or "0".
+  It must accept, case-insensitively and ignoring surrounding whitespace:
+  true values `1, true, yes, on` and false values `0, false, no, off, ""`.
+  An unset variable returns the `default` argument (False if not given).
+  Any other value must raise `ValueError` naming the variable, so typos are caught at startup.

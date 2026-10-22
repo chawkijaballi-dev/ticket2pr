@@ -1,0 +1,10 @@
+{
+  "webhookEvent": "jira:issue_created",
+  "issue": {
+    "key": "PROJ-42",
+    "fields": {
+      "summary": "Page 2 of the product list repeats the last item of page 1",
+      "labels": ["ticket2pr"]
+    }
+  }
+}

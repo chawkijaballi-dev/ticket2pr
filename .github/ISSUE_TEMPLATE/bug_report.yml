@@ -1,0 +1,21 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Commands, configuration (redact secrets) and the job id if any.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ticket2pr version (`ticket2pr --version`)

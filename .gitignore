@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Tooling
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# ticket2pr runtime data and local secrets
+.ticket2pr/
+.env
+evals/results/
+
+# Internal notes
+PROGRESS.md
