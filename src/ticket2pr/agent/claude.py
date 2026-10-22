@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
+import sys
 import time
 from collections.abc import AsyncIterator, Callable
 from typing import Any
@@ -27,6 +29,7 @@ from ticket2pr.agent.guard import Policy
 from ticket2pr.agent.prompts import SYSTEM_PROMPT, build_prompt
 from ticket2pr.config import SECRET_ENV_VARS, Effort
 from ticket2pr.domain import AgentOutcome, AgentResult, Usage
+from ticket2pr.errors import ConfigurationError
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +43,19 @@ _OUTCOMES = {
     "error_max_turns": AgentOutcome.MAX_TURNS,
     "error_max_budget_usd": AgentOutcome.BUDGET_EXCEEDED,
 }
+
+# What Claude Code's Bash sandbox needs on each platform. When one is missing, Claude Code
+# prints a warning and runs commands *unsandboxed*, so ticket2pr checks first and fails closed.
+_SANDBOX_TOOLS = {"linux": ("bwrap", "socat"), "darwin": ("sandbox-exec",)}
+
+
+def missing_sandbox_tools(platform: str = sys.platform) -> list[str]:
+    """Return the sandbox dependencies missing on this machine (empty when it can sandbox)."""
+    required = _SANDBOX_TOOLS.get(platform)
+    if required is None:
+        return [f"no Bash sandbox on {platform}"]
+    return [tool for tool in required if shutil.which(tool) is None]
+
 
 # Seam for tests: same signature as ``claude_agent_sdk.query``.
 QueryFn = Callable[..., AsyncIterator[Any]]
@@ -70,6 +86,11 @@ class ClaudeAgent:
         self._query = query_fn
 
     async def run(self, task: AgentTask) -> AgentResult:
+        if self._bash_sandbox and (missing := missing_sandbox_tools()):
+            raise ConfigurationError(
+                f"the Bash sandbox cannot start (missing: {', '.join(missing)}). Install them, "
+                "or set T2P_BASH_SANDBOX=false if the worker already runs in an isolated container"
+            )
         policy = Policy(workspace=task.workspace, protected_globs=self._protected_globs)
         options = self.build_options(task, policy)
         started = time.monotonic()

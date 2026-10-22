@@ -23,7 +23,7 @@ ticket access can write. Every layer below assumes the layer above it can fail.
 | Tool allowlist (`Read`, `Write`, `Edit`, `Glob`, `Grep`, `Bash`, `TodoWrite`); no web or sub-agents; `permission_mode="dontAsk"` | `agent/claude.py` | T1, T2 |
 | `setting_sources=[]`: no user/project/local settings, so no repository hooks or permissions | `agent/claude.py` | T3 |
 | Secrets blanked in the agent's environment (`SECRET_ENV_VARS`) | `config.py`, `agent/claude.py` | T2 |
-| Bash OS sandbox (bubblewrap / Seatbelt) with a network allowlist and no unsandboxed escape | `agent/claude.py` | T2, T3 |
+| Bash OS sandbox (bubblewrap / Seatbelt) with a network allowlist and no unsandboxed escape. **Fails closed:** Claude Code silently runs Bash unsandboxed when `bwrap`/`socat` are missing, so ticket2pr checks them before every run and refuses the job | `agent/claude.py` | T2, T3 |
 | `PreToolUse` guard: file tools confined to the workspace, `.git/` off limits, protected globs read-only, history/remote/config git commands and env dumps blocked | `agent/guard.py` | T2, T4, T5 |
 | Credentials passed to git through `GIT_CONFIG_*` env vars, never argv or `.git/config` | `scm/git.py` | T2, T4 |
 | `.git/config` restored from a post-clone snapshot; hooks disabled (`core.hooksPath=/dev/null`, `--no-verify`); push to an explicit URL | `scm/git.py`, `pipeline.py` | T4 |

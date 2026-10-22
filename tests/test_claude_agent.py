@@ -18,9 +18,15 @@ from claude_agent_sdk import (
 )
 
 from ticket2pr.agent.base import AgentTask
-from ticket2pr.agent.claude import ALLOWED_TOOLS, ClaudeAgent, usage_from_result
+from ticket2pr.agent.claude import (
+    ALLOWED_TOOLS,
+    ClaudeAgent,
+    missing_sandbox_tools,
+    usage_from_result,
+)
 from ticket2pr.config import SECRET_ENV_VARS
 from ticket2pr.domain import AgentOutcome, Ticket
+from ticket2pr.errors import ConfigurationError
 
 
 def _result(subtype: str = "success", **overrides: Any) -> ResultMessage:
@@ -55,6 +61,11 @@ def _agent(query_fn: Any, **overrides: Any) -> ClaudeAgent:
         "query_fn": query_fn,
     }
     return ClaudeAgent(**{**params, **overrides})
+
+
+@pytest.fixture(autouse=True)
+def _sandbox_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("ticket2pr.agent.claude.missing_sandbox_tools", list)
 
 
 @pytest.fixture
@@ -240,3 +251,31 @@ def test_usage_from_result_tolerates_missing_fields() -> None:
     usage = usage_from_result(_result(usage=None, total_cost_usd=None))
     assert usage.cost_usd == 0.0
     assert usage.total_tokens == 0
+
+
+async def test_fails_closed_when_sandbox_cannot_start(
+    task: AgentTask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("ticket2pr.agent.claude.missing_sandbox_tools", lambda: ["socat"])
+    query = Recorder(_result())
+    with pytest.raises(ConfigurationError, match="missing: socat"):
+        await _agent(query).run(task)
+    assert query.calls == []  # the agent never started
+    await _agent(query, bash_sandbox=False).run(task)  # explicit opt-out still works
+    assert len(query.calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("platform", "which", "missing"),
+    [
+        ("linux", {"bwrap": "/usr/bin/bwrap", "socat": "/usr/bin/socat"}, []),
+        ("linux", {"bwrap": "/usr/bin/bwrap"}, ["socat"]),
+        ("darwin", {"sandbox-exec": "/usr/bin/sandbox-exec"}, []),
+        ("win32", {}, ["no Bash sandbox on win32"]),
+    ],
+)
+def test_missing_sandbox_tools(
+    monkeypatch: pytest.MonkeyPatch, platform: str, which: dict[str, str], missing: list[str]
+) -> None:
+    monkeypatch.setattr("shutil.which", which.get)
+    assert missing_sandbox_tools(platform) == missing

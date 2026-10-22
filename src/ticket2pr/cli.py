@@ -16,6 +16,7 @@ from rich.logging import RichHandler
 from rich.table import Table
 
 from ticket2pr import __version__
+from ticket2pr.agent.claude import missing_sandbox_tools
 from ticket2pr.config import Settings
 from ticket2pr.domain import Job, JobStatus, is_ticket_key
 from ticket2pr.errors import Ticket2PRError
@@ -161,6 +162,8 @@ def doctor() -> None:
         "GitHub token": bool(settings.github_token.get_secret_value()),
         "webhook secret": bool(settings.jira_webhook_secret.get_secret_value()),
         "at least one project → repo mapping": bool(settings.repos),
+        "Bash sandbox dependencies (or T2P_BASH_SANDBOX=false)": not settings.bash_sandbox
+        or not missing_sandbox_tools(),
         "graphify (optional)": shutil.which("graphify") is not None,
     }
     for name, ok in checks.items():

@@ -23,4 +23,5 @@ All notable changes to this project are documented here. The format follows
   job claims, worker pool, jobs API behind a bearer token.
 - CLI: `run`, `serve`, `jobs`, `eval`, `doctor`.
 - SWE-bench-style eval harness with hidden tests, an oracle agent and four tasks.
+- Fail-closed check of the Bash sandbox dependencies (`bwrap`, `socat`) before each run.
 - Optional graphify code graph for the agent when the CLI is installed.

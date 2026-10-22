@@ -332,6 +332,7 @@ def test_cli_doctor_all_green(monkeypatch: pytest.MonkeyPatch) -> None:
         "T2P_REPOS": '{"PROJ": "acme/api"}',
     }.items():
         monkeypatch.setenv(name, value)
+    monkeypatch.setattr(cli, "missing_sandbox_tools", list)
     result = runner.invoke(cli.app, ["doctor"])
     assert result.exit_code == 0, result.output
 
