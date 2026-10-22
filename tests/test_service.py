@@ -282,7 +282,6 @@ def cli_env(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> None:
     monkeypatch.setenv("T2P_DATA_DIR", str(settings.data_dir))
     monkeypatch.setenv("T2P_REPOS", json.dumps(settings.repos))
     monkeypatch.setenv("T2P_TEST_COMMAND", settings.test_command)
-    monkeypatch.setenv("T2P_USE_GRAPHIFY", "false")
     monkeypatch.setattr("ticket2pr.runtime.build_agent", lambda _: ScriptedAgent([fix_add]))
 
 

@@ -25,6 +25,7 @@ def pr_body(
     *,
     ticket: Ticket,
     agent: AgentResult,
+    usage: Usage,
     changes: ChangeSet,
     tests: TestReport,
     model: str,
@@ -38,7 +39,7 @@ def pr_body(
         "## Verification\n\n" + _tests_section(tests),
         "## Change size\n\n"
         f"{len(changes.files)} file(s), +{changes.insertions} / -{changes.deletions}",
-        "## Agent run\n\n" + usage_table(agent.usage, model=model),
+        "## Agent run\n\n" + usage_table(usage, model=model),
     ]
     if agent.denied_actions or excluded:
         lines = [f"- Blocked: `{action}`" for action in agent.denied_actions]

@@ -7,8 +7,9 @@ dependencies are missing, so ticket2pr checks them before every job.
 
 The test sandbox uses bubblewrap: fresh PID namespace (so ``/proc`` shows no other process
 and no other environment), no network unless allowed, a read-only root filesystem, writable
-workspace and ``/tmp`` only, and the service's home and data directories replaced by empty
-tmpfs mounts so credentials files are out of reach.
+workspace and private ``/tmp`` only, an empty ``/run`` (no host IPC sockets), and the
+service's home and data directories replaced by empty tmpfs mounts so credentials files are
+out of reach.
 """
 
 from __future__ import annotations
@@ -60,9 +61,12 @@ class TestSandbox:
         command = ["bwrap", "--die-with-parent", "--new-session", "--unshare-all"]
         if self.network:
             command.append("--share-net")
-        # /tmp here is a fresh tmpfs inside the sandbox, not the host's shared /tmp.
+        # /tmp here is a fresh tmpfs inside the sandbox, not the host's shared /tmp. /run is
+        # emptied too: it holds live IPC sockets (the systemd/D-Bus user bus, docker.sock), and
+        # connect() works through a read-only bind; `systemd-run --user` would then start a
+        # process outside the sandbox.
         command += ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
-        command += ["--tmpfs", "/tmp"]  # noqa: S108
+        command += ["--tmpfs", "/tmp", "--tmpfs", "/run"]  # noqa: S108
         for path in self.hidden:
             if path.exists():
                 command += ["--tmpfs", str(path)]

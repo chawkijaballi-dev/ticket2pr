@@ -20,7 +20,8 @@ from ticket2pr.domain import TestReport
 from ticket2pr.sandbox import TestSandbox
 
 _TAIL_CHARS = 8_000
-_ENV_PASSTHROUGH = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "VIRTUAL_ENV", "UV_CACHE_DIR")
+# Not VIRTUAL_ENV: it would point tools such as `poetry run` at ticket2pr's own virtualenv.
+_ENV_PASSTHROUGH = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "UV_CACHE_DIR")
 
 
 def detect_test_command(workspace: Path) -> str | None:

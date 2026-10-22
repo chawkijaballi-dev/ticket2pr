@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -148,7 +149,7 @@ async def test_protected_paths_are_never_committed(
     assert ".env" in body
 
 
-async def test_git_config_tampering_is_reverted_before_push(
+async def test_git_config_tampering_cannot_redirect_the_push(
     make_pipeline: MakePipeline, store: JobStore, repos_dir: Path, tmp_path: Path
 ) -> None:
     attacker = tmp_path / "attacker.git"
@@ -255,34 +256,6 @@ async def test_without_test_command_pr_is_draft(
     assert job.status is JobStatus.NEEDS_REVIEW
     assert job.tests_passed is None
     assert _pr(job)["draft"] is True
-
-
-async def test_graphify_runs_when_available(
-    make_pipeline: MakePipeline,
-    store: JobStore,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    repos_dir: Path,
-) -> None:
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    fake = bin_dir / "graphify"
-    fake.write_text("#!/bin/sh\nmkdir -p graphify-out && echo '{}' > graphify-out/graph.json\n")
-    fake.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
-
-    seen: list[bool] = []
-
-    def check_graph(task: AgentTask) -> None:
-        seen.append((task.workspace / "graphify-out" / "graph.json").exists())
-        fix_add(task)
-
-    job = await make_pipeline(ScriptedAgent([check_graph]), use_graphify=True).run(
-        claim(store, "CALC-1")
-    )
-    assert seen == [True]
-    files = git(repos_dir / REPO, "show", "--name-only", "--format=", _branch(job)).split()
-    assert files == ["calc.py"]  # the graph is never committed
 
 
 async def test_commondir_redirect_cannot_hijack_the_push(
@@ -411,29 +384,6 @@ async def test_sandbox_unavailable_fails_before_spending(
     assert agent.tasks == []
 
 
-async def test_hung_graphify_is_killed(
-    make_pipeline: MakePipeline,
-    store: JobStore,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    fake = bin_dir / "graphify"
-    fake.write_text(f"#!/bin/sh\necho $$ > {tmp_path}/graphify.pid\nexec sleep 60\n")
-    fake.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
-    monkeypatch.setattr("ticket2pr.pipeline.GRAPHIFY_TIMEOUT_S", 0.5)
-
-    job = await make_pipeline(ScriptedAgent([fix_add]), use_graphify=True).run(
-        claim(store, "CALC-1")
-    )
-    assert job.status is JobStatus.SUCCEEDED
-    pid = int((tmp_path / "graphify.pid").read_text())
-    with pytest.raises(ProcessLookupError):
-        os.kill(pid, 0)
-
-
 @pytest.mark.skipif(
     sys.platform != "linux" or shutil.which("bwrap") is None, reason="needs bubblewrap"
 )
@@ -462,3 +412,59 @@ async def test_end_to_end_with_the_real_test_sandbox(
     )
     assert job.status is JobStatus.SUCCEEDED, job.error
     assert job.tests_passed is True
+
+
+async def test_pr_reports_total_cost_and_every_guardrail_event(
+    make_pipeline: MakePipeline, store: JobStore
+) -> None:
+    class Blocked(ScriptedAgent):
+        async def run(self, task: AgentTask) -> AgentResult:
+            result = await super().run(task)
+            event = f"Bash: attempt {len(self.tasks)} blocked"
+            return result.model_copy(update={"denied_actions": (event,)})
+
+    job = await make_pipeline(Blocked([break_differently, fix_add])).run(claim(store, "CALC-1"))
+    body = str(_pr(job)["body"])
+    assert job.usage.cost_usd == pytest.approx(1.0)
+    assert "| $1.00 |" in body
+    assert "attempt 1 blocked" in body
+    assert "attempt 2 blocked" in body
+
+
+async def test_cancelled_run_releases_the_ticket(
+    make_pipeline: MakePipeline, store: JobStore
+) -> None:
+    started = asyncio.Event()
+
+    class Slow(ScriptedAgent):
+        async def run(self, task: AgentTask) -> AgentResult:
+            started.set()
+            await asyncio.sleep(60)
+            raise AssertionError("unreachable")
+
+    job = claim(store, "CALC-1")
+    running = asyncio.create_task(make_pipeline(Slow([fix_add])).run(job))
+    await started.wait()
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    assert job.id is not None
+    stored = store.get(job.id)
+    assert stored is not None
+    assert stored.status is JobStatus.FAILED
+    assert stored.error == "interrupted before completion"
+    assert store.claim("CALC-1", None) is not None  # the ticket can be processed again
+
+
+async def test_bytecode_caches_are_never_committed(
+    make_pipeline: MakePipeline, store: JobStore, repos_dir: Path
+) -> None:
+    def fix_and_leave_caches(task: AgentTask) -> None:
+        fix_add(task)
+        (task.workspace / "__pycache__").mkdir()
+        (task.workspace / "__pycache__" / "calc.cpython-312.pyc").write_bytes(b"\x00")
+        (task.workspace / "stale.pyc").write_bytes(b"\x00")
+
+    job = await make_pipeline(ScriptedAgent([fix_and_leave_caches])).run(claim(store, "CALC-1"))
+    files = git(repos_dir / REPO, "show", "--name-only", "--format=", _branch(job)).split()
+    assert files == ["calc.py"]

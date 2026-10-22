@@ -56,12 +56,16 @@ class GitHubClient:
             "GET", f"/repos/{repo}/pulls", params={"head": f"{owner}:{head}", "state": "open"}
         )
         if not (isinstance(existing, list) and existing):
-            created = await self._request(
-                "POST",
-                f"/repos/{repo}/pulls",
-                json={"title": title, "head": head, "base": base, "body": body, "draft": draft},
-            )
-            return _to_pr(created)
+            payload = {"title": title, "head": head, "base": base, "body": body, "draft": draft}
+            try:
+                return _to_pr(await self._request("POST", f"/repos/{repo}/pulls", json=payload))
+            except SCMError as exc:
+                if not (draft and exc.status_code == httpx.codes.UNPROCESSABLE_ENTITY):
+                    raise
+                # Draft PRs are unavailable on some plans: open a regular one rather than none.
+                logger.warning("draft PRs refused on %s, opening a regular PR: %s", repo, exc)
+                payload["draft"] = False
+                return _to_pr(await self._request("POST", f"/repos/{repo}/pulls", json=payload))
         number = int(existing[0]["number"])
         updated = _to_pr(
             await self._request(
@@ -107,7 +111,8 @@ class GitHubClient:
             raise SCMError(f"GitHub {method} {path} failed: {exc}") from exc
         if response.is_error:
             raise SCMError(
-                f"GitHub {method} {path} returned {response.status_code}: {response.text[:300]}"
+                f"GitHub {method} {path} returned {response.status_code}: {response.text[:300]}",
+                status_code=response.status_code,
             )
         return response.json()
 

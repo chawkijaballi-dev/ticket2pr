@@ -22,6 +22,10 @@ class TicketNotFoundError(TrackerError):
 class SCMError(Ticket2PRError):
     """A git or GitHub operation failed."""
 
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code  # HTTP status, for GitHub API errors
+
 
 class AgentError(Ticket2PRError):
     """The coding agent could not complete its run."""

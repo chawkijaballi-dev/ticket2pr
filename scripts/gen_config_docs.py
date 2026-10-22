@@ -22,7 +22,8 @@ HEADER = """\
 
 Every setting is an environment variable with the `T2P_` prefix, or a line in a `.env` file
 in the working directory. Lists and mappings are JSON, e.g.
-`T2P_REPOS='{"PROJ": "acme/api"}'`. The Claude Agent SDK reads `ANTHROPIC_API_KEY` itself.
+`T2P_REPOS='{"PROJ": "acme/api"}'`. The Claude API key is also accepted under its usual
+name, `ANTHROPIC_API_KEY`, in the environment or in `.env`.
 
 | Variable | Default | Description |
 |---|---|---|

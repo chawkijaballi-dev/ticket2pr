@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import re
-from functools import cached_property
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_MODEL = "claude-opus-5-5"
@@ -73,6 +72,12 @@ class Settings(BaseSettings):
     )
 
     # ── Agent ─────────────────────────────────────────────────────────
+    anthropic_api_key: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("ANTHROPIC_API_KEY", "T2P_ANTHROPIC_API_KEY"),
+        description="Claude API key (also read without the T2P_ prefix). Empty: the Claude "
+        "Agent SDK uses its own credentials (environment or `claude` login).",
+    )
     model: str = Field(default=DEFAULT_MODEL, description="Claude model the agent runs on.")
     effort: Effort = Field(default="high", description="low, medium, high, xhigh or max.")
     max_budget_usd: float = Field(default=5.0, gt=0, description="Hard spend cap per ticket.")
@@ -114,9 +119,6 @@ class Settings(BaseSettings):
     draft_on_test_failure: bool = Field(
         default=True, description="Open PRs as drafts when the tests fail or are missing."
     )
-    use_graphify: bool = Field(
-        default=True, description="Build a graphify code graph when the CLI is installed."
-    )
 
     # ── Service ───────────────────────────────────────────────────────
     data_dir: Path = Field(
@@ -142,11 +144,11 @@ class Settings(BaseSettings):
     def _strip_trailing_slash(cls, value: str) -> str:
         return value.rstrip("/")
 
-    @cached_property
+    @property
     def workspaces_dir(self) -> Path:
         return self.data_dir / "workspaces"
 
-    @cached_property
+    @property
     def db_path(self) -> Path:
         return self.data_dir / "jobs.sqlite3"
 

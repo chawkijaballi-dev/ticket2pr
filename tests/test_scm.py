@@ -193,6 +193,31 @@ async def test_github_syncs_draft_state_on_update(
 
 
 @respx.mock
+async def test_github_falls_back_to_a_regular_pr_when_drafts_are_refused() -> None:
+    respx.get(f"{API}/repos/acme/api/pulls").respond(json=[])
+    create = respx.post(f"{API}/repos/acme/api/pulls")
+    create.side_effect = [
+        httpx.Response(422, json={"message": "Draft pull requests are not supported"}),
+        httpx.Response(201, json={"number": 7, "html_url": "https://github.com/acme/api/pull/7"}),
+    ]
+    pr = await GitHubClient(token="t").open_or_update_pr(
+        "acme/api", head="b", base="main", title="T", body="B", draft=True
+    )
+    assert (pr.number, pr.draft) == (7, False)
+    assert json.loads(create.calls.last.request.content)["draft"] is False
+
+
+@respx.mock
+async def test_github_create_errors_other_than_draft_refusal_propagate() -> None:
+    respx.get(f"{API}/repos/acme/api/pulls").respond(json=[])
+    respx.post(f"{API}/repos/acme/api/pulls").respond(422, json={"message": "No commits"})
+    with pytest.raises(SCMError, match="422"):
+        await GitHubClient(token="t").open_or_update_pr(
+            "acme/api", head="b", base="main", title="T", body="B", draft=False
+        )
+
+
+@respx.mock
 async def test_github_reports_the_real_state_when_draft_change_fails() -> None:
     respx.get(f"{API}/repos/acme/api/pulls").respond(json=[{"number": 5, "node_id": "PR_5"}])
     respx.patch(f"{API}/repos/acme/api/pulls/5").respond(

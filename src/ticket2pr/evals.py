@@ -157,7 +157,6 @@ async def _run_task(
             "data_dir": scratch / "data",
             "repos": {task.key.split("-")[0]: repo_name},
             "test_command": pytest_cmd,
-            "use_graphify": False,
         }
     )
     async with open_runtime(

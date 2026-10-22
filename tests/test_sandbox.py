@@ -76,7 +76,7 @@ def test_wrap_builds_the_bwrap_command(tmp_path: Path) -> None:
     argv = sandbox.wrap(["/bin/true"], tmp_path)
     assert argv[:4] == ["bwrap", "--die-with-parent", "--new-session", "--unshare-all"]
     assert "--share-net" not in argv
-    assert argv.count("--tmpfs") == 2  # /tmp and the existing hidden path only
+    assert argv.count("--tmpfs") == 3  # /tmp, /run and the existing hidden path only
     assert argv[-2:] == ["--", "/bin/true"]
     assert "--share-net" in TestSandbox(hidden=(), network=True).wrap(["x"], tmp_path)
 
@@ -144,6 +144,18 @@ async def test_sandbox_allows_workspace_writes_only(
     assert (workspace / "result.txt").read_text() == "ok\n"
     assert not outside.exists()
     assert "READONLY" in report.output_tail
+
+
+@needs_bwrap
+async def test_sandbox_exposes_no_host_ipc_socket(workspace: Path, sandbox: TestSandbox) -> None:
+    """A user D-Bus socket would let `systemd-run --user` start a process outside the sandbox."""
+    output = await _run(
+        'test -e "/run/user/$(id -u)/bus" && echo EXPOSED; '
+        "find /run -type s 2>/dev/null | head -1; echo DONE",
+        workspace,
+        sandbox,
+    )
+    assert output.strip() == "DONE"
 
 
 @needs_bwrap

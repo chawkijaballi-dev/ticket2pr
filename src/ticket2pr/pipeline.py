@@ -1,6 +1,6 @@
 """The ticket → pull request pipeline.
 
-    fetch ticket → clone → (graphify) → agent ⟲ sandboxed tests → publish clone → guardrails
+    fetch ticket → clone → agent ⟲ sandboxed tests → publish clone → guardrails
     → commit → push → PR → comment
 
 Every step that can fail maps to a ``Ticket2PRError``; the job then ends ``FAILED`` with the
@@ -17,7 +17,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
-from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,8 +43,6 @@ from ticket2pr.verify import detect_test_command, run_tests
 
 logger = logging.getLogger(__name__)
 
-GRAPHIFY_OUT = "graphify-out"
-GRAPHIFY_TIMEOUT_S = 300
 _MIN_RETRY_BUDGET_USD = 0.25
 
 
@@ -97,6 +94,12 @@ class Pipeline:
                 ensure_sandbox_available()  # before any clone or spend
             job_dir = self._settings.workspaces_dir / f"job-{job.id}"
             outcome = await self._process(job, ticket, job_dir, options)
+        except asyncio.CancelledError:
+            # Shutdown or Ctrl-C: leave a terminal status so the ticket is not blocked forever.
+            job.status = JobStatus.FAILED
+            job.error = "interrupted before completion"
+            self._store.save(job)
+            raise
         except Ticket2PRError as exc:
             job.status = JobStatus.FAILED
             job.error = self._redactor.redact(str(exc))
@@ -134,7 +137,6 @@ class Pipeline:
         base_sha = await work.head()
         job.branch = settings.branch_prefix + ticket.branch_slug()
         self._store.save(job)
-        await self._maybe_build_graph(work.path)
 
         test_command = settings.test_command or detect_test_command(work.path)
         agent, tests = await self._agent_loop(job, ticket, work.path, test_command, options)
@@ -150,7 +152,8 @@ class Pipeline:
                 f"{settings.base_branch} moved too far during the run; re-run the ticket"
             ) from None
         await asyncio.to_thread(sync_tree, work.path, publish.path)
-        publish.exclude(f"/{GRAPHIFY_OUT}/")
+        # Untracked build artefacts the agent's own runs may leave (repos without a .gitignore).
+        publish.exclude("__pycache__/", "*.py[co]")
         changes, excluded = await self._stage(publish)
 
         await publish.commit(
@@ -168,6 +171,7 @@ class Pipeline:
                 render.pr_body(
                     ticket=ticket,
                     agent=agent,
+                    usage=job.usage,
                     changes=changes,
                     tests=tests,
                     model=settings.model,
@@ -193,6 +197,7 @@ class Pipeline:
         guidelines = read_guidelines(workspace)
         feedback = ""
         completed: AgentResult | None = None  # last attempt that finished normally
+        denied: list[str] = []  # guardrail events across every attempt
         tests = TestReport(command=test_command, passed=False)
         for attempt in range(1, options.max_attempts + 1):
             remaining = settings.max_budget_usd - job.usage.cost_usd
@@ -209,6 +214,7 @@ class Pipeline:
             )
             result = await self._agent.run(task)
             job.usage += result.usage
+            denied += result.denied_actions
             self._store.save(job)
             logger.info(
                 "job %s attempt %d: %s (%s)",
@@ -227,8 +233,7 @@ class Pipeline:
                 completed = completed.model_copy(
                     update={
                         "summary": f"{completed.summary}\n\n_A retry to fix the failing tests "
-                        f"stopped early ({result.outcome.value})._",
-                        "denied_actions": completed.denied_actions + result.denied_actions,
+                        f"stopped early ({result.outcome.value})._"
                     }
                 )
                 tests = await self._run_tests(test_command, workspace)
@@ -241,7 +246,7 @@ class Pipeline:
 
         if completed is None:  # pragma: no cover - max_attempts >= 1 guarantees one run
             raise AgentError("the agent never ran")
-        return completed, tests
+        return completed.model_copy(update={"denied_actions": tuple(denied)}), tests
 
     async def _run_tests(self, command: str | None, workspace: Path) -> TestReport:
         return await run_tests(
@@ -268,34 +273,6 @@ class Pipeline:
         if self._redactor.contains_secret(await repo.staged_diff()):
             raise PolicyViolationError("the change contains a configured secret; not pushing it")
         return changes, excluded
-
-    async def _maybe_build_graph(self, workspace: Path) -> None:
-        """Give the agent a graphify code graph when the CLI is available (best effort)."""
-        if not self._settings.use_graphify or shutil.which("graphify") is None:
-            return
-        try:
-            process = await asyncio.create_subprocess_exec(
-                "graphify",
-                "update",
-                ".",
-                cwd=workspace,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-        except OSError:
-            logger.warning("graphify could not start; continuing without a code graph")
-            return
-        try:
-            async with asyncio.timeout(GRAPHIFY_TIMEOUT_S):
-                await process.wait()
-        except TimeoutError:
-            logger.warning("graphify timed out; continuing without a code graph")
-        finally:
-            if process.returncode is None:  # timed out or cancelled
-                with suppress(ProcessLookupError):
-                    process.kill()
-                await process.wait()
 
     async def _report(self, job: Job, outcome: _Outcome | None) -> None:
         comment = render.tracker_comment(

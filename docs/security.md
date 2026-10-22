@@ -25,7 +25,7 @@ layers above it can fail.
 | `setting_sources=[]`: no user/project/local settings, so no repository hooks or permissions | `agent/claude.py` | T3 |
 | ticket2pr's secrets blanked in the agent's environment, and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` so Claude Code strips its own credentials (`ANTHROPIC_API_KEY`, …) from every command the agent runs | `config.py`, `agent/claude.py` | T2 |
 | Agent's Bash in Claude Code's bubblewrap sandbox with a network allowlist and no unsandboxed escape | `agent/claude.py` | T2, T3 |
-| Repository tests in ticket2pr's bubblewrap sandbox: fresh PID namespace (no other process's `/proc/<pid>/environ`), no network unless `T2P_TEST_NETWORK`, read-only root, writable workspace and private `/tmp` only, the service's home, data and working directories hidden, minimal environment, own process group, hard timeout | `sandbox.py`, `verify.py` | T2, T3 |
+| Repository tests in ticket2pr's bubblewrap sandbox: fresh PID namespace (no other process's `/proc/<pid>/environ`), no network unless `T2P_TEST_NETWORK`, read-only root, writable workspace and private `/tmp` only, an empty `/run` (no host IPC sockets such as the systemd/D-Bus user bus, which would otherwise let `systemd-run --user` start a process outside the sandbox), the service's home, data and working directories hidden, minimal environment, own process group, hard timeout | `sandbox.py`, `verify.py` | T2, T3 |
 | **Fails closed:** Claude Code silently runs Bash unsandboxed when `bwrap`/`socat` are missing, so every job checks them first and is refused (before any clone or spend) when they are absent | `sandbox.py`, `pipeline.py` | T2, T3 |
 | The service process is made non-dumpable (`PR_SET_DUMPABLE=0`), so same-uid processes cannot read its `/proc/<pid>/environ` or memory | `sandbox.py`, `cli.py` | T2 |
 | `PreToolUse` guard: file tools confined to the workspace, `.git/` off limits, protected globs read-only, history/remote/config git commands and environment dumps blocked | `agent/guard.py` | T2, T4, T5 |
@@ -41,12 +41,20 @@ The guard is defence in depth, not the boundary: it parses shell text heuristica
 toward blocking. The boundaries are the sandboxes, the scrubbed environments and the publish
 clone.
 
+Residual risk: the git process that pushes holds the GitHub token in its environment, which
+any process of the same user could read from `/proc`. No untrusted process runs at that point
+(the agent has exited and the tests' process group was killed), and the sandboxes keep their
+processes in their own PID namespace, so this relies on the sandbox holding.
+
 ## Deployment guidance
 
 - **Least-privilege tokens.** GitHub: a fine-grained token limited to the mapped repositories
   with *Contents* and *Pull requests* read/write, nothing else. Protect the base branch so
   ticket2pr can only open PRs, never merge. Jira: a bot account that can read the projects
   and comment. Anthropic: a dedicated key in a workspace with a spend limit.
+- **A dedicated service account** with no other processes, no systemd `--user` session and no
+  lingering (`loginctl disable-linger`) keeps same-user IPC out of reach even if a sandbox
+  were bypassed.
 - **One worker per container** gives the strongest isolation between concurrent jobs. With
   `T2P_WORKERS > 1`, jobs share a user and a filesystem namespace.
 - **Containers.** bubblewrap cannot create namespaces in an unprivileged container, so the

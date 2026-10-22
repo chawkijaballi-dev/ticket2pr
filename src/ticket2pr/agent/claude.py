@@ -58,6 +58,7 @@ class ClaudeAgent:
         protected_globs: tuple[str, ...] = (),
         network_allowlist: tuple[str, ...] = (),
         sandbox: bool = True,
+        api_key: str = "",
         query_fn: QueryFn = query,
     ) -> None:
         self._model = model
@@ -68,6 +69,7 @@ class ClaudeAgent:
         self._protected_globs = protected_globs
         self._network_allowlist = network_allowlist
         self._sandbox = sandbox
+        self._api_key = api_key
         self._query = query_fn
 
     async def run(self, task: AgentTask) -> AgentResult:
@@ -109,8 +111,15 @@ class ClaudeAgent:
 
         if result is None:
             return interrupted(AgentOutcome.ERROR, "The agent ended without a result message.")
+        # An API failure on the last turn (overload, rate limit, prompt too long) ends with
+        # subtype "success" and is_error=True: that is not a completed run.
+        outcome = (
+            AgentOutcome.ERROR
+            if result.is_error and result.subtype == "success"
+            else _OUTCOMES.get(result.subtype, AgentOutcome.ERROR)
+        )
         return AgentResult(
-            outcome=_OUTCOMES.get(result.subtype, AgentOutcome.ERROR),
+            outcome=outcome,
             summary=(result.result or last_text).strip(),
             usage=usage_from_result(result),
             session_id=result.session_id,
@@ -142,7 +151,13 @@ class ClaudeAgent:
             hooks={"PreToolUse": [HookMatcher(hooks=[_guard_hook(policy)])]},
             # Blank ticket2pr's own secrets, and have Claude Code strip its credentials
             # (ANTHROPIC_API_KEY, ...) from the environment of every command the agent runs.
-            env={**dict.fromkeys(SECRET_ENV_VARS, ""), "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"},
+            # PYTHONDONTWRITEBYTECODE keeps the agent's own test runs from leaving caches behind.
+            env={
+                **dict.fromkeys(SECRET_ENV_VARS, ""),
+                **({"ANTHROPIC_API_KEY": self._api_key} if self._api_key else {}),
+                "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
+                "PYTHONDONTWRITEBYTECODE": "1",
+            },
         )
 
 

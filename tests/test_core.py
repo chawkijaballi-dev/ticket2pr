@@ -90,6 +90,27 @@ def test_settings_reject_bad_repo_mapping(repos: dict[str, str]) -> None:
         Settings(repos=repos, _env_file=None)
 
 
+def test_derived_paths_follow_copies() -> None:
+    settings = Settings(data_dir=Path("/a"), _env_file=None)
+    assert settings.db_path == Path("/a/jobs.sqlite3")
+    copy = settings.model_copy(update={"data_dir": Path("/b")})
+    assert copy.db_path == Path("/b/jobs.sqlite3")
+    assert copy.workspaces_dir == Path("/b/workspaces")
+
+
+def test_anthropic_key_is_read_with_or_without_prefix(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text("ANTHROPIC_API_KEY=sk-ant-from-dotenv\n")
+    settings = Settings(_env_file=env_file)
+    assert settings.anthropic_api_key.get_secret_value() == "sk-ant-from-dotenv"
+    monkeypatch.setenv("T2P_ANTHROPIC_API_KEY", "sk-ant-prefixed")
+    prefixed = Settings(_env_file=None)
+    assert prefixed.anthropic_api_key.get_secret_value() == "sk-ant-prefixed"
+
+
 def test_settings_reject_non_positive_budget() -> None:
     with pytest.raises(ValidationError):
         Settings(max_budget_usd=0, _env_file=None)
@@ -208,8 +229,10 @@ async def test_run_tests_pass_fail_and_missing(tmp_path: Path) -> None:
 
 async def test_run_tests_hides_secrets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("T2P_GITHUB_TOKEN", "leak-me")
+    monkeypatch.setenv("VIRTUAL_ENV", "/opt/ticket2pr-venv")
     report = await run_tests("env", tmp_path, timeout_s=10, sandbox=None)
     assert "leak-me" not in report.output_tail
+    assert "ticket2pr-venv" not in report.output_tail  # the repo brings its own toolchain
     assert "CI=true" in report.output_tail
 
 
@@ -237,7 +260,8 @@ def test_commit_message_and_title() -> None:
 def test_pr_body_contents() -> None:
     body = render.pr_body(
         ticket=TICKET,
-        agent=AgentResult(outcome=AgentOutcome.COMPLETED, summary="Did it", usage=USAGE),
+        agent=AgentResult(outcome=AgentOutcome.COMPLETED, summary="Did it"),
+        usage=USAGE,
         changes=ChangeSet(files=("a.py", "b.py"), insertions=10, deletions=2),
         tests=TestReport(command="pytest", passed=False, output_tail="E  ``` assert", exit_code=1),
         model="claude-opus-5-5",
@@ -255,6 +279,7 @@ def test_pr_body_without_tests_or_summary() -> None:
     body = render.pr_body(
         ticket=Ticket(key="PROJ-1", title="Fix"),
         agent=AgentResult(outcome=AgentOutcome.COMPLETED),
+        usage=Usage(),
         changes=ChangeSet(files=("a.py",)),
         tests=TestReport(command=None, passed=False),
         model="m",

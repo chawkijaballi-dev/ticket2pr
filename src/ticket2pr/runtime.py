@@ -46,6 +46,7 @@ def build_agent(settings: Settings) -> CodingAgent:
         protected_globs=tuple(settings.protected_paths),
         network_allowlist=tuple(settings.network_allowlist),
         sandbox=settings.sandbox,
+        api_key=settings.anthropic_api_key.get_secret_value(),
     )
 
 

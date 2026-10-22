@@ -156,7 +156,9 @@ def doctor() -> None:
     settings = _settings()
     checks = {
         "git on PATH": shutil.which("git") is not None,
-        "Claude credentials (ANTHROPIC_API_KEY)": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "Claude credentials (ANTHROPIC_API_KEY)": bool(
+            settings.anthropic_api_key.get_secret_value() or os.environ.get("ANTHROPIC_API_KEY")
+        ),
         "Jira configured": bool(
             settings.jira_base_url
             and settings.jira_email
@@ -167,12 +169,10 @@ def doctor() -> None:
         "at least one project → repo mapping": bool(settings.repos),
         "sandbox: bwrap + socat (or T2P_SANDBOX=false)": not settings.sandbox
         or not missing_sandbox_tools(),
-        "graphify (optional)": shutil.which("graphify") is not None,
     }
     for name, ok in checks.items():
         console.print(f"{'[green]✓' if ok else '[red]✗'}[/] {name}")
-    required = [ok for name, ok in checks.items() if "optional" not in name]
-    raise typer.Exit(0 if all(required) else 1)
+    raise typer.Exit(0 if all(checks.values()) else 1)
 
 
 @app.command("eval")

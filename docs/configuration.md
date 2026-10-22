@@ -4,7 +4,8 @@
 
 Every setting is an environment variable with the `T2P_` prefix, or a line in a `.env` file
 in the working directory. Lists and mappings are JSON, e.g.
-`T2P_REPOS='{"PROJ": "acme/api"}'`. The Claude Agent SDK reads `ANTHROPIC_API_KEY` itself.
+`T2P_REPOS='{"PROJ": "acme/api"}'`. The Claude API key is also accepted under its usual
+name, `ANTHROPIC_API_KEY`, in the environment or in `.env`.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -20,6 +21,7 @@ in the working directory. Lists and mappings are JSON, e.g.
 | `T2P_BRANCH_PREFIX` | `ticket2pr/` | Prefix of the branches pushed. |
 | `T2P_COMMIT_AUTHOR_NAME` | `ticket2pr` | Commit author name. |
 | `T2P_COMMIT_AUTHOR_EMAIL` | `ticket2pr@users.noreply.github.com` | Commit author email. |
+| `T2P_ANTHROPIC_API_KEY` | *(secret)* | Claude API key (also read without the T2P_ prefix). Empty: the Claude Agent SDK uses its own credentials (environment or `claude` login). |
 | `T2P_MODEL` | `claude-opus-5-5` | Claude model the agent runs on. |
 | `T2P_EFFORT` | `high` | low, medium, high, xhigh or max. |
 | `T2P_MAX_BUDGET_USD` | `5.0` | Hard spend cap per ticket. |
@@ -34,7 +36,6 @@ in the working directory. Lists and mappings are JSON, e.g.
 | `T2P_MAX_CHANGED_FILES` | `25` | Larger changes fail the job instead of opening a PR. |
 | `T2P_PROTECTED_PATHS` | `[".github/", ".git/", "**/.env", "**/*.pem", "**/*.key"]` | Glob patterns the agent may neither edit nor commit. |
 | `T2P_DRAFT_ON_TEST_FAILURE` | `true` | Open PRs as drafts when the tests fail or are missing. |
-| `T2P_USE_GRAPHIFY` | `true` | Build a graphify code graph when the CLI is installed. |
 | `T2P_DATA_DIR` | `.ticket2pr` | Job database and workspaces live here. |
 | `T2P_API_TOKEN` | *(secret)* | Bearer token for the /jobs API; empty disables it. |
 | `T2P_WORKERS` | `2` | Concurrent jobs in serve mode. |

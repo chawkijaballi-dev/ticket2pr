@@ -95,7 +95,6 @@ def settings(tmp_path: Path) -> Settings:
         data_dir=tmp_path / "data",
         repos={"CALC": REPO},
         test_command=f"{sys.executable} -m pytest -q -p no:cacheprovider",
-        use_graphify=False,
         sandbox=False,  # the sandbox itself is covered by tests/test_sandbox.py
         max_budget_usd=2.0,
         _env_file=None,

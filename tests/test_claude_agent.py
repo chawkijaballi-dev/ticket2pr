@@ -131,6 +131,26 @@ async def test_error_subtypes(task: AgentTask, subtype: str, outcome: AgentOutco
     assert result.usage.cost_capped is False
 
 
+async def test_api_error_on_last_turn_is_not_a_success(task: AgentTask) -> None:
+    class ApiFailure(Recorder):
+        async def _stream(self) -> AsyncIterator[Any]:
+            yield _result("success", is_error=True, result="API Error: 529 overloaded")
+            raise ResultError("Claude Code returned an error result", exit_code=1)
+
+    result = await _agent(ApiFailure()).run(task)
+    assert result.outcome is AgentOutcome.ERROR
+    assert result.usage.cost_usd == 1.25
+
+
+async def test_api_key_from_settings_reaches_the_cli(task: AgentTask) -> None:
+    query = Recorder(_result())
+    await _agent(query, api_key="sk-ant-x").run(task)
+    assert query.calls[0][1].env["ANTHROPIC_API_KEY"] == "sk-ant-x"
+    plain = Recorder(_result())
+    await _agent(plain).run(task)
+    assert "ANTHROPIC_API_KEY" not in plain.calls[0][1].env  # SDK falls back to its own login
+
+
 async def test_summary_falls_back_to_last_assistant_text(task: AgentTask) -> None:
     query = Recorder(
         AssistantMessage(content=[TextBlock(text="final words")], model="m"),
@@ -196,6 +216,7 @@ async def test_options_lock_down_the_agent(task: AgentTask) -> None:
     assert options.sandbox["network"] == {"allowedDomains": ["pypi.org"]}
     assert all(options.env[name] == "" for name in SECRET_ENV_VARS)
     assert options.env["CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"] == "1"
+    assert options.env["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
 async def test_bash_sandbox_can_be_disabled(task: AgentTask) -> None:
