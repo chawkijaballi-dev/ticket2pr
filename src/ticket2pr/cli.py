@@ -16,7 +16,7 @@ from rich.logging import RichHandler
 from rich.table import Table
 
 from ticket2pr import __version__
-from ticket2pr.config import Settings
+from ticket2pr.config import CLAUDE_CREDENTIAL_ENV_VARS, Settings
 from ticket2pr.domain import Job, JobStatus, is_ticket_key
 from ticket2pr.errors import Ticket2PRError
 from ticket2pr.pipeline import RunOptions
@@ -58,17 +58,18 @@ def main(
         format="%(message)s",
         handlers=[RichHandler(console=console, show_path=False)],
     )
-    # This process holds the API tokens: keep same-uid processes (the agent, the tests) from
-    # reading them out of /proc, and adopt anything they daemonise so it can be reaped.
-    harden_service_process()
 
 
 def _settings() -> Settings:
     try:
-        return Settings()
+        settings = Settings()
     except ValidationError as exc:
         console.print(f"[red]Invalid configuration:[/red]\n{exc}")
         raise typer.Exit(2) from exc
+    # This process holds the API tokens: keep same-uid processes (the agent, the tests) from
+    # reading them out of /proc, and, without the sandbox, adopt what they daemonise.
+    harden_service_process(settings)
+    return settings
 
 
 @app.command()
@@ -231,6 +232,7 @@ def eval_(
         f"per resolved ticket {'-' if per_resolved is None else f'${per_resolved:.2f}'}"
     )
     if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(summary.to_json(), encoding="utf-8")
     raise typer.Exit(0 if summary.resolve_rate == 1 else 1)
 
@@ -239,7 +241,7 @@ def _has_claude_credentials(settings: Settings) -> bool:
     """Any credential the Claude Agent SDK can use: a key, a token, or a `claude` login."""
     if settings.anthropic_api_key.get_secret_value():
         return True
-    if any(os.environ.get(name) for name in ("ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN")):
+    if any(os.environ.get(name) for name in CLAUDE_CREDENTIAL_ENV_VARS):
         return True
     return (Path.home() / ".claude" / ".credentials.json").is_file()
 

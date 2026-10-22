@@ -180,10 +180,15 @@ class Settings(BaseSettings):
         return self.repos.get(project)
 
 
-# Credentials of other tools that may sit in the worker's environment.
-_EXTRA_SECRET_ENV_VARS = ("GITHUB_TOKEN", "GH_TOKEN")
-# The Claude CLI itself needs this one; Claude Code strips it from the agent's commands.
-_CLI_CREDENTIAL = "ANTHROPIC_API_KEY"
+# Credentials the Claude CLI may need. They must reach it, and Claude Code strips them from
+# the agent's commands (CLAUDE_CODE_SUBPROCESS_ENV_SCRUB).
+CLAUDE_CREDENTIAL_ENV_VARS = (
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+)
+# Credentials of other tools that may sit in the worker's environment: blanked for the agent.
+OTHER_CREDENTIAL_ENV_VARS = ("GITHUB_TOKEN", "GH_TOKEN")
 
 
 def secret_env_names() -> tuple[str, ...]:
@@ -192,7 +197,7 @@ def secret_env_names() -> tuple[str, ...]:
     Derived from the ``SecretStr`` settings (with their aliases), so a new secret setting is
     hidden from the agent without anyone having to remember a second list.
     """
-    names: set[str] = set(_EXTRA_SECRET_ENV_VARS)
+    names: set[str] = set(OTHER_CREDENTIAL_ENV_VARS)
     for name, field in Settings.model_fields.items():
         if field.annotation is not SecretStr:
             continue
@@ -200,5 +205,5 @@ def secret_env_names() -> tuple[str, ...]:
         alias = field.validation_alias
         if isinstance(alias, AliasChoices):
             names.update(choice for choice in alias.choices if isinstance(choice, str))
-    names.discard(_CLI_CREDENTIAL)
+    names.difference_update(CLAUDE_CREDENTIAL_ENV_VARS)
     return tuple(sorted(names))

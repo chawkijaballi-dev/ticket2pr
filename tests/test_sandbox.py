@@ -21,6 +21,7 @@ from ticket2pr.sandbox import (
     TestSandbox,
     become_subreaper,
     ensure_sandbox_available,
+    harden_service_process,
     kill_descendants,
     make_process_undumpable,
     missing_sandbox_tools,
@@ -241,6 +242,73 @@ def test_subreaper_finds_and_kills_daemonised_descendants(tmp_path: Path) -> Non
     assert subprocess.run([sys.executable, "-c", script], check=False).returncode == 0
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux prctl")
+def test_zombies_are_reaped_but_not_counted_as_killed() -> None:
+    script = (
+        "import os, sys, time\n"
+        "from ticket2pr.sandbox import kill_descendants\n"
+        "pid = os.fork()\n"
+        "if pid == 0:\n"
+        "    os._exit(0)\n"
+        "time.sleep(0.2)  # the child is now a zombie\n"
+        "assert kill_descendants() == 0\n"
+        "try:\n"
+        "    os.waitpid(pid, os.WNOHANG)\n"
+        "except ChildProcessError:\n"
+        "    sys.exit(0)  # already reaped\n"
+        "sys.exit(1)\n"
+    )
+    assert subprocess.run([sys.executable, "-c", script], check=False).returncode == 0
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux prctl")
+def test_git_leaves_no_background_process_under_a_subreaper(tmp_path: Path) -> None:
+    """Git's detached auto-maintenance would otherwise pile up as adopted zombies."""
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    for args in (["init", "-q", "-b", "main"], ["commit", "-q", "--allow-empty", "-m", "init"]):
+        subprocess.run(["git", *args], cwd=origin, check=True, env=_GIT_ENV)
+    script = (
+        "import asyncio, sys, time\n"
+        "from pathlib import Path\n"
+        "from ticket2pr.sandbox import _descendants, become_subreaper\n"
+        "from ticket2pr.scm.git import GitRepo\n"
+        "become_subreaper()\n"
+        "async def main():\n"
+        "    for i in range(5):\n"
+        f"        repo = await GitRepo.clone('{origin.as_uri()}', Path('{tmp_path}') / f'c{{i}}',"
+        " branch='main')\n"
+        "        (repo.path / 'f').write_text(str(i))\n"
+        "        await repo.stage_all()\n"
+        "        await repo.commit('m', author_name='a', author_email='a@b.c')\n"
+        "asyncio.run(main())\n"
+        "time.sleep(0.5)\n"
+        "sys.exit(len(_descendants(__import__('os').getpid())))\n"
+    )
+    assert subprocess.run([sys.executable, "-c", script], check=False).returncode == 0
+
+
+_GIT_ENV = {
+    **os.environ,
+    "GIT_AUTHOR_NAME": "t",
+    "GIT_AUTHOR_EMAIL": "t@t",
+    "GIT_COMMITTER_NAME": "t",
+    "GIT_COMMITTER_EMAIL": "t@t",
+}
+
+
+def test_hardening_only_becomes_a_subreaper_without_the_sandbox(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr("ticket2pr.sandbox.make_process_undumpable", lambda: calls.append("dump"))
+    monkeypatch.setattr("ticket2pr.sandbox.become_subreaper", lambda: calls.append("reaper"))
+    harden_service_process(settings.model_copy(update={"sandbox": True}))
+    assert calls == ["dump"]
+    harden_service_process(settings.model_copy(update={"sandbox": False}))
+    assert calls == ["dump", "dump", "reaper"]
+
+
 def test_kill_descendants_is_a_noop_elsewhere(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.platform", "darwin")
     assert kill_descendants() == 0
@@ -262,6 +330,12 @@ def test_redactor_masks_and_detects(monkeypatch: pytest.MonkeyPatch) -> None:
     assert redactor.redact(text) == f"token {MASK} and key {MASK}, short stays"
     assert redactor.contains_secret(b"...ghp_abcdefghij...")
     assert not redactor.contains_secret("nothing here")
+
+
+def test_redactor_masks_claude_oauth_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-abcdefgh")
+    redactor = Redactor.from_settings(Settings(_env_file=None))
+    assert redactor.redact("t=sk-ant-oat01-abcdefgh") == f"t={MASK}"
 
 
 def test_redactor_prefers_longest_match() -> None:

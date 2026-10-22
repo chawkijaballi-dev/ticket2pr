@@ -26,7 +26,11 @@ branch, adds the hidden tests and runs pytest. A task is resolved only if all of
 | `--agent` | What it measures | Cost |
 |---|---|---|
 | `oracle` (default) | That every task is solvable and graded correctly, and that the harness works. Runs in CI. | Free |
-| `claude` | The Claude agent with your `T2P_MODEL` / `T2P_EFFORT` / budget settings. Needs the sandbox (bubblewrap + socat) or `T2P_SANDBOX=false`. | API usage |
+| `claude` | The Claude agent with your `T2P_MODEL` / `T2P_EFFORT` / budget settings. | API usage |
+
+Both run the real pipeline, so both need the sandbox tools (bubblewrap + socat on Linux), or
+`T2P_SANDBOX=false` on a machine you trust. `T2P_FORK_OWNER` is ignored: the scratch git host
+has no forks.
 
 A test also runs an agent that only edits the README: a PR opens, the hidden tests run
 against the unfixed code, and none may pass. This guards against tasks whose hidden tests

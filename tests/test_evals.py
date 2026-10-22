@@ -97,3 +97,22 @@ def test_cli_eval_uses_claude_agent_when_asked(monkeypatch: pytest.MonkeyPatch) 
     )
     assert result.exit_code == 1
     assert "Resolved 0%" in result.output
+
+
+async def test_eval_ignores_fork_mode(settings: Settings) -> None:
+    forked = settings.model_copy(update={"fork_owner": "ticket2pr-bot"})
+    summary = await run_suite(discover(TASKS, ["slugify"]), settings=forked)
+    assert summary.resolve_rate == 1.0
+
+
+def test_cli_eval_creates_the_report_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("T2P_DATA_DIR", str(tmp_path / "data"))
+    report = tmp_path / "results" / "nested" / "report.json"
+    result = CliRunner().invoke(
+        cli.app,
+        ["eval", "--tasks-dir", str(TASKS), "--task", "slugify", "--output", str(report)],
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(report.read_text())["resolve_rate"] == 1.0

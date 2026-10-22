@@ -121,10 +121,16 @@ def _interpreter_roots() -> tuple[Path, ...]:
     return tuple(sorted(roots))
 
 
-def harden_service_process() -> None:
-    """Apply both process-level protections; called once when the CLI starts."""
+def harden_service_process(settings: Settings) -> None:
+    """Process-level protections for the process that holds the secrets.
+
+    It always becomes non-dumpable. It only becomes a child subreaper without the sandbox:
+    that is when it reaps its descendants between jobs, and an adopted orphan nobody reaps
+    would otherwise linger as a zombie.
+    """
     make_process_undumpable()
-    become_subreaper()
+    if not settings.sandbox:
+        become_subreaper()
 
 
 def become_subreaper() -> None:
@@ -149,38 +155,41 @@ def kill_descendants(root: int | None = None) -> int:
     if sys.platform != "linux":
         return 0
     root = os.getpid() if root is None else root
-    killed = 0
+    killed: set[int] = set()
     for _ in range(10):  # repeat: a dying process may have just forked
         targets = _descendants(root)
         if not targets:
             break
-        for pid in targets:
+        for pid, state in targets:
+            if state == "Z":
+                continue  # already dead: only needs reaping below
             with suppress(ProcessLookupError, PermissionError):
                 os.kill(pid, signal.SIGKILL)
-                killed += 1
+                killed.add(pid)
         # Reap them: as their (sub)reaper we are the parent, so waitpid works.
-        for pid in targets:
+        for pid, _state in targets:
             with suppress(ChildProcessError, OSError):
                 os.waitpid(pid, 0)
-    return killed
+    return len(killed)
 
 
-def _descendants(root: int) -> list[int]:
-    children: dict[int, list[int]] = {}
+def _descendants(root: int) -> list[tuple[int, str]]:
+    """``(pid, state)`` of every descendant of ``root``, from ``/proc/<pid>/stat``."""
+    children: dict[int, list[tuple[int, str]]] = {}
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
             continue
         with suppress(OSError, ValueError, IndexError):
             stat = (entry / "stat").read_text()
             # Fields after the ")" that closes the command name: state, ppid, ...
-            ppid = int(stat[stat.rindex(")") + 2 :].split()[1])
-            children.setdefault(ppid, []).append(int(entry.name))
-    found: list[int] = []
+            state, ppid = stat[stat.rindex(")") + 2 :].split()[:2]
+            children.setdefault(int(ppid), []).append((int(entry.name), state))
+    found: list[tuple[int, str]] = []
     stack = [root]
     while stack:
         for child in children.get(stack.pop(), []):
             found.append(child)
-            stack.append(child)
+            stack.append(child[0])
     return found
 
 

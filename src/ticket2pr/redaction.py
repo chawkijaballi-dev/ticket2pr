@@ -12,11 +12,10 @@ from collections.abc import Iterable
 
 from pydantic import SecretStr
 
-from ticket2pr.config import Settings
+from ticket2pr.config import CLAUDE_CREDENTIAL_ENV_VARS, OTHER_CREDENTIAL_ENV_VARS, Settings
 
 MASK = "[REDACTED]"
 _MIN_SECRET_LEN = 8  # shorter values would mask ordinary words
-_EXTRA_ENV_SECRETS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "GITHUB_TOKEN", "GH_TOKEN")
 
 
 class Redactor:
@@ -32,7 +31,8 @@ class Redactor:
             for name in type(settings).model_fields
             if isinstance(value := getattr(settings, name), SecretStr)
         ]
-        values += [os.environ.get(name, "") for name in _EXTRA_ENV_SECRETS]
+        extra = (*CLAUDE_CREDENTIAL_ENV_VARS, *OTHER_CREDENTIAL_ENV_VARS)
+        values += [os.environ.get(name, "") for name in extra]
         return cls(values)
 
     def redact(self, text: str) -> str:
