@@ -51,9 +51,10 @@ class GitHubClient:
         (draft PRs are unavailable on some plans) the PR keeps its state, and the returned
         ``PullRequest.draft`` says which one it is.
         """
-        owner = repo.split("/", 1)[0]
+        # ``head`` is a branch of ``repo``, or ``owner:branch`` for a branch of a fork.
+        qualified = head if ":" in head else f"{repo.split('/', 1)[0]}:{head}"
         existing = await self._request(
-            "GET", f"/repos/{repo}/pulls", params={"head": f"{owner}:{head}", "state": "open"}
+            "GET", f"/repos/{repo}/pulls", params={"head": qualified, "state": "open"}
         )
         if not (isinstance(existing, list) and existing):
             payload = {"title": title, "head": head, "base": base, "body": body, "draft": draft}

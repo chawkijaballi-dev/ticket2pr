@@ -21,7 +21,7 @@ from ticket2pr.domain import Job, JobStatus, is_ticket_key
 from ticket2pr.errors import Ticket2PRError
 from ticket2pr.pipeline import RunOptions
 from ticket2pr.runtime import open_runtime
-from ticket2pr.sandbox import make_process_undumpable, missing_sandbox_tools
+from ticket2pr.sandbox import harden_service_process, missing_sandbox_tools
 from ticket2pr.store import JobStore
 
 app = typer.Typer(
@@ -58,9 +58,9 @@ def main(
         format="%(message)s",
         handlers=[RichHandler(console=console, show_path=False)],
     )
-    # This process holds the API tokens; keep same-uid processes (the agent, the tests) from
-    # reading them out of /proc/<pid>/environ or /proc/<pid>/mem.
-    make_process_undumpable()
+    # This process holds the API tokens: keep same-uid processes (the agent, the tests) from
+    # reading them out of /proc, and adopt anything they daemonise so it can be reaped.
+    harden_service_process()
 
 
 def _settings() -> Settings:
@@ -170,8 +170,15 @@ def doctor() -> None:
         "sandbox: bwrap + socat (or T2P_SANDBOX=false)": not settings.sandbox
         or not missing_sandbox_tools(),
     }
+    recommended = {
+        "pushes to a bot-owned fork (T2P_FORK_OWNER), so CI secrets stay out of reach": bool(
+            settings.fork_owner
+        ),
+    }
     for name, ok in checks.items():
-        console.print(f"{'[green]✓' if ok else '[red]✗'}[/] {name}")
+        console.print(f"{'[green]✓[/green]' if ok else '[red]✗[/red]'} {name}")
+    for name, ok in recommended.items():
+        console.print(f"{'[green]✓[/green]' if ok else '[yellow]![/yellow]'} {name}")
     raise typer.Exit(0 if all(checks.values()) else 1)
 
 

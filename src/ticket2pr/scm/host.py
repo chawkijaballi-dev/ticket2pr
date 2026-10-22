@@ -7,6 +7,7 @@ directory and records "pull requests" as JSON files, for demos and offline evals
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -71,7 +72,7 @@ class LocalHost:
     ) -> PullRequest:
         prs = self._root / "_prs"
         prs.mkdir(exist_ok=True)
-        slug = f"{repo.replace('/', '__')}__{head.replace('/', '__')}"
+        slug = re.sub(r"[^A-Za-z0-9._-]", "__", f"{repo}__{head}")
         path = prs / f"{slug}.json"
         record = {"repo": repo, "head": head, "base": base, "title": title, "body": body}
         path.write_text(json.dumps({**record, "draft": draft}, indent=2), encoding="utf-8")

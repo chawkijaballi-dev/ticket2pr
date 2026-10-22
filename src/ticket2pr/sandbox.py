@@ -16,8 +16,11 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import os
 import shutil
+import signal
 import sys
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +33,7 @@ logger = logging.getLogger(__name__)
 # bubblewrap. Other platforms have no test sandbox, so they need an isolated container.
 _LINUX_SANDBOX_TOOLS = ("bwrap", "socat")
 _PR_SET_DUMPABLE = 4
+_PR_SET_CHILD_SUBREAPER = 36
 
 
 def missing_sandbox_tools(platform: str = sys.platform) -> list[str]:
@@ -78,18 +82,24 @@ class TestSandbox:
         return command + argv
 
 
+def hidden_paths(settings: Settings) -> tuple[Path, ...]:
+    """Directories untrusted code must not read: the service's home, data and working dirs."""
+    hidden = {Path.home(), Path.cwd(), settings.data_dir}
+    return tuple(sorted(path for path in hidden if path != Path("/")))
+
+
+def toolchain_paths(settings: Settings) -> tuple[Path, ...]:
+    """Directories re-exposed read-only inside hidden ones (interpreters, configured tools)."""
+    return (*_interpreter_roots(), *(path.resolve() for path in settings.sandbox_readonly_paths))
+
+
 def sandbox_profile(settings: Settings) -> TestSandbox | None:
     """The test sandbox profile for a deployment, or ``None`` when sandboxing is disabled."""
     if not settings.sandbox:
         return None
-    hidden = {Path.home(), Path.cwd(), settings.data_dir.resolve()}
     return TestSandbox(
-        hidden=tuple(sorted(path for path in hidden if path != Path("/"))),
-        # The hidden directories may hold the interpreter (a virtualenv, uv-managed Python).
-        readonly=(
-            *_interpreter_roots(),
-            *(path.resolve() for path in settings.sandbox_readonly_paths),
-        ),
+        hidden=hidden_paths(settings),
+        readonly=toolchain_paths(settings),
         network=settings.test_network,
     )
 
@@ -109,6 +119,69 @@ def _interpreter_roots() -> tuple[Path, ...]:
         roots.add(hop.parent.parent)
     roots.add(Path(sys.executable).resolve().parent.parent)
     return tuple(sorted(roots))
+
+
+def harden_service_process() -> None:
+    """Apply both process-level protections; called once when the CLI starts."""
+    make_process_undumpable()
+    become_subreaper()
+
+
+def become_subreaper() -> None:
+    """Adopt every orphaned descendant, so ``kill_descendants`` can find daemonised ones.
+
+    A test or an unsandboxed agent command can ``setsid`` and double-fork to outlive its
+    process group; as a subreaper, the service still sees it as a descendant.
+    """
+    if sys.platform != "linux":
+        return
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(_PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
+        logger.warning("prctl(PR_SET_CHILD_SUBREAPER) failed: errno %s", ctypes.get_errno())
+
+
+def kill_descendants(root: int | None = None) -> int:
+    """SIGKILL every descendant of ``root`` (default: this process). Returns how many died.
+
+    Only safe when this process runs no other children it wants to keep, i.e. one job at a
+    time; ``Settings`` enforces a single worker when the sandbox is disabled.
+    """
+    if sys.platform != "linux":
+        return 0
+    root = os.getpid() if root is None else root
+    killed = 0
+    for _ in range(10):  # repeat: a dying process may have just forked
+        targets = _descendants(root)
+        if not targets:
+            break
+        for pid in targets:
+            with suppress(ProcessLookupError, PermissionError):
+                os.kill(pid, signal.SIGKILL)
+                killed += 1
+        # Reap them: as their (sub)reaper we are the parent, so waitpid works.
+        for pid in targets:
+            with suppress(ChildProcessError, OSError):
+                os.waitpid(pid, 0)
+    return killed
+
+
+def _descendants(root: int) -> list[int]:
+    children: dict[int, list[int]] = {}
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        with suppress(OSError, ValueError, IndexError):
+            stat = (entry / "stat").read_text()
+            # Fields after the ")" that closes the command name: state, ppid, ...
+            ppid = int(stat[stat.rindex(")") + 2 :].split()[1])
+            children.setdefault(ppid, []).append(int(entry.name))
+    found: list[int] = []
+    stack = [root]
+    while stack:
+        for child in children.get(stack.pop(), []):
+            found.append(child)
+            stack.append(child)
+    return found
 
 
 def make_process_undumpable() -> None:

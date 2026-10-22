@@ -12,8 +12,8 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-dev
 
 # ── runtime: git, the sandbox dependencies and a Python test toolchain, non-root ─
 # The repositories' tests run with their own toolchain, not ticket2pr's virtualenv: this image
-# ships uv (for `T2P_TEST_COMMAND="uv run --frozen pytest"`, with T2P_TEST_NETWORK=true).
-# For other stacks (Node, Go, ...), build FROM this image and add them.
+# ships uv, e.g. `T2P_TEST_COMMAND="uv run --frozen pytest"`. Prefer toolchains and
+# dependencies baked into a derived image over T2P_TEST_NETWORK=true (see docs/security.md).
 FROM python:3.12-slim-bookworm
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates bubblewrap socat \

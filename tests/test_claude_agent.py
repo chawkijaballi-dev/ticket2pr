@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, cast
@@ -55,6 +56,8 @@ def _agent(query_fn: Any, **overrides: Any) -> ClaudeAgent:
         "timeout_s": 5,
         "protected_globs": (".github/",),
         "network_allowlist": ("pypi.org",),
+        "read_denied": (Path("/home/svc"), Path("/srv/t2p")),
+        "read_allowed": (Path("/opt/python"),),
         "query_fn": query_fn,
     }
     return ClaudeAgent(**{**params, **overrides})
@@ -218,6 +221,16 @@ async def test_options_lock_down_the_agent(task: AgentTask) -> None:
     assert all(options.env[name] == "" for name in secret_env_names())
     assert options.env["CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"] == "1"
     assert options.env["PYTHONDONTWRITEBYTECODE"] == "1"
+    sandbox: dict[str, Any] = dict(options.sandbox)
+    assert sandbox["failIfUnavailable"] is True
+    assert sandbox["filesystem"] == {
+        "denyRead": ["/home/svc", "/srv/t2p"],
+        "allowRead": [str(task.workspace.resolve()), "/opt/python"],
+    }
+    assert isinstance(options.settings, str)
+    assert json.loads(options.settings) == {
+        "permissions": {"blockReadsOutsideWorkingDirectories": True}
+    }
 
 
 def test_every_secret_setting_is_hidden_from_the_agent() -> None:

@@ -81,6 +81,9 @@ class GitRepo:
         )
         return cls(dest)
 
+    def config_bytes(self) -> bytes:
+        return (self.path / ".git" / "config").read_bytes()
+
     async def head(self) -> str:
         return (await self._run("rev-parse", "HEAD")).strip()
 

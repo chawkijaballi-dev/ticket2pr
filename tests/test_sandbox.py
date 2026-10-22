@@ -19,7 +19,9 @@ from ticket2pr.errors import ConfigurationError
 from ticket2pr.redaction import MASK, Redactor
 from ticket2pr.sandbox import (
     TestSandbox,
+    become_subreaper,
     ensure_sandbox_available,
+    kill_descendants,
     make_process_undumpable,
     missing_sandbox_tools,
     sandbox_profile,
@@ -214,6 +216,35 @@ def test_undumpable_process_hides_its_environment_from_children() -> None:
 def test_undumpable_is_a_noop_elsewhere(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.platform", "darwin")
     make_process_undumpable()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux prctl")
+def test_subreaper_finds_and_kills_daemonised_descendants(tmp_path: Path) -> None:
+    """A double-forked, setsid daemon escapes its process group but not a subreaper."""
+    marker = tmp_path / "daemon.pid"
+    script = (
+        "import os, subprocess, sys, time\n"
+        "from ticket2pr.sandbox import become_subreaper, kill_descendants\n"
+        "become_subreaper()\n"
+        f"subprocess.run(['sh', '-c', 'setsid sh -c \"echo $$ > {marker}; exec sleep 60\" &'])\n"
+        "for _ in range(100):\n"
+        f"    if os.path.exists('{marker}') and open('{marker}').read().strip(): break\n"
+        "    time.sleep(0.05)\n"
+        f"pid = int(open('{marker}').read())\n"
+        "assert kill_descendants() >= 1\n"
+        "try:\n"
+        "    os.kill(pid, 0)\n"
+        "except ProcessLookupError:\n"
+        "    sys.exit(0)\n"
+        "sys.exit(1)\n"
+    )
+    assert subprocess.run([sys.executable, "-c", script], check=False).returncode == 0
+
+
+def test_kill_descendants_is_a_noop_elsewhere(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.platform", "darwin")
+    assert kill_descendants() == 0
+    become_subreaper()
 
 
 # ── redaction ───────────────────────────────────────────────────────────

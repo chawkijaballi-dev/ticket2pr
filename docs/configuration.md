@@ -17,6 +17,7 @@ name, `ANTHROPIC_API_KEY`, in the environment or in `.env`.
 | `T2P_GITHUB_TOKEN` | *(secret)* | Fine-grained token: Contents + Pull requests (read/write). |
 | `T2P_GITHUB_API_URL` | `https://api.github.com` | Change for GitHub Enterprise Server. |
 | `T2P_REPOS` | `{}` | Jira project key → GitHub repo, e.g. {"PROJ": "acme/api"}. |
+| `T2P_FORK_OWNER` | *(empty)* | Push branches to <fork_owner>/<repo> (a fork owned by the bot) and open cross-repository PRs. Recommended: a branch pushed to the target repository runs its CI with the repository's secrets before anyone reviews the agent's code. |
 | `T2P_BASE_BRANCH` | `main` | Branch to clone and target with PRs. |
 | `T2P_BRANCH_PREFIX` | `ticket2pr/` | Prefix of the branches pushed. |
 | `T2P_COMMIT_AUTHOR_NAME` | `ticket2pr` | Commit author name. |
@@ -38,4 +39,4 @@ name, `ANTHROPIC_API_KEY`, in the environment or in `.env`.
 | `T2P_DRAFT_ON_TEST_FAILURE` | `true` | Open PRs as drafts when the tests fail or are missing. |
 | `T2P_DATA_DIR` | `.ticket2pr` | Job database and workspaces live here. |
 | `T2P_API_TOKEN` | *(secret)* | Bearer token for the /jobs API; empty disables it. |
-| `T2P_WORKERS` | `2` | Concurrent jobs in serve mode. |
+| `T2P_WORKERS` | `2` | Concurrent jobs in serve mode. Forced to 1 when the sandbox is disabled. |

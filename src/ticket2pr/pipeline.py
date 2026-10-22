@@ -34,7 +34,7 @@ from ticket2pr.errors import (
     Ticket2PRError,
 )
 from ticket2pr.redaction import Redactor
-from ticket2pr.sandbox import ensure_sandbox_available, sandbox_profile
+from ticket2pr.sandbox import ensure_sandbox_available, kill_descendants, sandbox_profile
 from ticket2pr.scm.git import GitRepo, sync_tree
 from ticket2pr.scm.host import RepoHost
 from ticket2pr.store import JobStore
@@ -142,9 +142,11 @@ class Pipeline:
         agent, tests = await self._agent_loop(job, ticket, work.path, test_command, options)
 
         # From here on, the agent's workspace is data, not a repository we trust.
+        await self._reap_untrusted_processes()
         publish = await GitRepo.clone(
             clone_url, job_dir / "publish", branch=settings.base_branch, auth=auth
         )
+        publish_config = publish.config_bytes()
         try:
             await publish.checkout_new_branch(job.branch, base_sha)
         except SCMError:  # the base branch moved past the shallow history since the first clone
@@ -161,10 +163,13 @@ class Pipeline:
             author_name=settings.commit_author_name,
             author_email=settings.commit_author_email,
         )
-        await publish.push(clone_url, job.branch, auth=auth)
+        if publish.config_bytes() != publish_config:
+            raise PolicyViolationError("the publish clone's git config changed; not pushing")
+        push_repo, head = self._push_target(job.repo, job.branch)
+        await publish.push(self._host.clone_url(push_repo), job.branch, auth=auth)
         pr = await self._host.open_or_update_pr(
             job.repo,
-            head=job.branch,
+            head=head,
             base=settings.base_branch,
             title=render.pr_title(ticket),
             body=self._redactor.redact(
@@ -184,6 +189,21 @@ class Pipeline:
         job.tests_passed = tests.passed if tests.ran else None
         job.status = JobStatus.SUCCEEDED if tests.passed else JobStatus.NEEDS_REVIEW
         return _Outcome(tests=tests, pr=pr)
+
+    def _push_target(self, repo: str, branch: str) -> tuple[str, str]:
+        """Where the branch goes, and the PR ``head`` naming it (``owner:branch`` for forks)."""
+        owner = self._settings.fork_owner
+        if not owner:
+            return repo, branch
+        return f"{owner}/{repo.split('/', 1)[1]}", f"{owner}:{branch}"
+
+    async def _reap_untrusted_processes(self) -> None:
+        """Without the sandbox, nothing contains what the agent or the tests left running."""
+        if self._settings.sandbox:
+            return  # each sandbox's PID namespace already died with it
+        killed = await asyncio.to_thread(kill_descendants)
+        if killed:
+            logger.warning("killed %d process(es) left behind by the agent or the tests", killed)
 
     async def _agent_loop(
         self,

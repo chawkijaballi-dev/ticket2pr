@@ -6,12 +6,13 @@ import re
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_MODEL = "claude-opus-5-5"
 
 _REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+_OWNER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 _PROJECT_RE = re.compile(r"^[A-Z][A-Z0-9_]+$")
 
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
@@ -52,6 +53,12 @@ class Settings(BaseSettings):
     repos: dict[str, str] = Field(
         default_factory=dict,
         description='Jira project key → GitHub repo, e.g. {"PROJ": "acme/api"}.',
+    )
+    fork_owner: str = Field(
+        default="",
+        description="Push branches to <fork_owner>/<repo> (a fork owned by the bot) and open "
+        "cross-repository PRs. Recommended: a branch pushed to the target repository runs its "
+        "CI with the repository's secrets before anyone reviews the agent's code.",
     )
     base_branch: str = Field(default="main", description="Branch to clone and target with PRs.")
     branch_prefix: str = Field(default="ticket2pr/", description="Prefix of the branches pushed.")
@@ -116,7 +123,12 @@ class Settings(BaseSettings):
     api_token: SecretStr = Field(
         default=SecretStr(""), description="Bearer token for the /jobs API; empty disables it."
     )
-    workers: int = Field(default=2, gt=0, le=32, description="Concurrent jobs in serve mode.")
+    workers: int = Field(
+        default=2,
+        gt=0,
+        le=32,
+        description="Concurrent jobs in serve mode. Forced to 1 when the sandbox is disabled.",
+    )
 
     @field_validator("repos")
     @classmethod
@@ -126,6 +138,21 @@ class Settings(BaseSettings):
                 raise ValueError(f"invalid Jira project key: {project!r}")
             if not _REPO_RE.fullmatch(repo):
                 raise ValueError(f"invalid GitHub repo for {project}: {repo!r} (want owner/name)")
+        return value
+
+    @model_validator(mode="after")
+    def _one_worker_without_sandbox(self) -> Settings:
+        # Without the sandbox, jobs share a user and a PID namespace: one job's processes could
+        # tamper with another job's publish clone, and reaping them would kill other jobs.
+        if not self.sandbox and self.workers != 1:
+            self.workers = 1
+        return self
+
+    @field_validator("fork_owner")
+    @classmethod
+    def _check_fork_owner(cls, value: str) -> str:
+        if value and not _OWNER_RE.fullmatch(value):
+            raise ValueError(f"invalid GitHub account name: {value!r}")
         return value
 
     @field_validator("data_dir")

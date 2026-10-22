@@ -113,6 +113,17 @@ def test_anthropic_key_is_read_with_or_without_prefix(
     assert prefixed.anthropic_api_key.get_secret_value() == "sk-ant-prefixed"
 
 
+def test_one_worker_without_sandbox() -> None:
+    assert Settings(sandbox=True, workers=4, _env_file=None).workers == 4
+    assert Settings(sandbox=False, workers=4, _env_file=None).workers == 1
+
+
+@pytest.mark.parametrize("owner", ["bad owner", "-dash", "x" * 40])
+def test_settings_reject_bad_fork_owner(owner: str) -> None:
+    with pytest.raises(ValidationError):
+        Settings(fork_owner=owner, _env_file=None)
+
+
 def test_settings_reject_non_positive_budget() -> None:
     with pytest.raises(ValidationError):
         Settings(max_budget_usd=0, _env_file=None)

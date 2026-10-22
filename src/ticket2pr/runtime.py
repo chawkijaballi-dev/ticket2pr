@@ -11,6 +11,7 @@ from ticket2pr.agent.base import CodingAgent
 from ticket2pr.agent.claude import ClaudeAgent
 from ticket2pr.config import Settings
 from ticket2pr.pipeline import Pipeline
+from ticket2pr.sandbox import hidden_paths, toolchain_paths
 from ticket2pr.scm.github import GitHubClient
 from ticket2pr.scm.host import GitHubHost, LocalHost, RepoHost
 from ticket2pr.store import JobStore
@@ -46,6 +47,8 @@ def build_agent(settings: Settings) -> CodingAgent:
         protected_globs=tuple(settings.protected_paths),
         network_allowlist=tuple(settings.network_allowlist),
         sandbox=settings.sandbox,
+        read_denied=hidden_paths(settings),
+        read_allowed=toolchain_paths(settings),
         api_key=settings.anthropic_api_key.get_secret_value(),
     )
 

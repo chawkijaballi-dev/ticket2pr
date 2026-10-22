@@ -26,7 +26,7 @@ from ticket2pr.agent.base import AgentTask
 from ticket2pr.config import Settings
 from ticket2pr.domain import AgentOutcome, AgentResult, Job, JobStatus
 from ticket2pr.pipeline import Pipeline, RunOptions
-from ticket2pr.scm.git import GitRepo
+from ticket2pr.scm.git import GitRepo, sync_tree
 from ticket2pr.scm.host import LocalHost
 from ticket2pr.store import JobStore
 from ticket2pr.trackers.local import LocalTracker
@@ -495,3 +495,57 @@ async def test_clone_into_a_relative_path(repos_dir: Path, tmp_path: Path) -> No
     repo = await GitRepo.clone((repos_dir / REPO).as_uri(), Path("rel") / "ws", branch="main")
     assert repo.path == tmp_path / "rel" / "ws"  # tests run with cwd = tmp_path
     assert (repo.path / "calc.py").exists()
+
+
+async def test_fork_mode_pushes_to_the_fork_and_opens_a_cross_repo_pr(
+    make_pipeline: MakePipeline, store: JobStore, repos_dir: Path
+) -> None:
+    fork = repos_dir / "ticket2pr-bot" / "calc"
+    git(repos_dir, "clone", "-q", str(repos_dir / REPO), str(fork))
+    git(fork, "config", "receive.denyCurrentBranch", "ignore")
+
+    job = await make_pipeline(ScriptedAgent([fix_add]), fork_owner="ticket2pr-bot").run(
+        claim(store, "CALC-1")
+    )
+
+    assert job.status is JobStatus.SUCCEEDED, job.error
+    assert _branch(job) in git(fork, "branch", "--list")
+    assert _branch(job) not in git(repos_dir / REPO, "branch", "--list")
+    pr = _pr(job)
+    assert pr["repo"] == REPO
+    assert pr["head"] == f"ticket2pr-bot:{_branch(job)}"
+
+
+async def test_publish_config_change_blocks_the_push(
+    make_pipeline: MakePipeline,
+    store: JobStore,
+    repos_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A leftover process editing the publish clone between clone and push is caught."""
+
+    def sync_then_tamper(source: Path, dest: Path) -> None:
+        sync_tree(source, dest)
+        with (dest / ".git" / "config").open("a") as config:
+            config.write('[url "https://evil.test/"]\n\tinsteadOf = file://\n')
+
+    monkeypatch.setattr("ticket2pr.pipeline.sync_tree", sync_then_tamper)
+    job = await make_pipeline(ScriptedAgent([fix_add])).run(claim(store, "CALC-1"))
+    assert job.status is JobStatus.FAILED
+    assert "git config changed" in (job.error or "")
+    assert "ticket2pr/" not in git(repos_dir / REPO, "branch", "--list")
+
+
+async def test_unsandboxed_jobs_reap_leftover_processes(
+    make_pipeline: MakePipeline, store: JobStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    def fake_kill() -> int:
+        calls.append("x")
+        return 2
+
+    monkeypatch.setattr("ticket2pr.pipeline.kill_descendants", fake_kill)
+    job = await make_pipeline(ScriptedAgent([fix_add])).run(claim(store, "CALC-1"))
+    assert job.status is JobStatus.SUCCEEDED
+    assert calls == ["x"]

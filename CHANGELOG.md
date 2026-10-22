@@ -29,3 +29,8 @@ All notable changes to this project are documented here. The format follows
   and fsmonitor.
 - Secret redaction in published text and refusal of changes that contain a secret.
 - PR draft state kept in sync on re-runs (GraphQL), and ticket comments that state it.
+- Fork mode (`T2P_FORK_OWNER`): cross-repository PRs keep the target CI's secrets away from
+  unreviewed agent code.
+- Agent reads confined to the workspace; the CLI refuses to run Bash unsandboxed.
+- Unsandboxed (container) mode: one job at a time, leftover processes killed before
+  publishing, queued jobs resumed after a restart.

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections.abc import AsyncIterator, Callable
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -58,6 +60,8 @@ class ClaudeAgent:
         protected_globs: tuple[str, ...] = (),
         network_allowlist: tuple[str, ...] = (),
         sandbox: bool = True,
+        read_denied: tuple[Path, ...] = (),
+        read_allowed: tuple[Path, ...] = (),
         api_key: str = "",
         query_fn: QueryFn = query,
     ) -> None:
@@ -69,6 +73,8 @@ class ClaudeAgent:
         self._protected_globs = protected_globs
         self._network_allowlist = network_allowlist
         self._sandbox = sandbox
+        self._read_denied = read_denied
+        self._read_allowed = read_allowed
         self._api_key = api_key
         self._query = query_fn
 
@@ -127,12 +133,27 @@ class ClaudeAgent:
         )
 
     def build_options(self, task: AgentTask, policy: Policy, budget: float) -> ClaudeAgentOptions:
-        sandbox: SandboxSettings = {
-            "enabled": self._sandbox,
-            "autoAllowBashIfSandboxed": True,
-            "allowUnsandboxedCommands": False,
-            "network": {"allowedDomains": list(self._network_allowlist)},
-        }
+        workspace = task.workspace.resolve()
+        sandbox = cast(
+            "SandboxSettings",
+            {
+                "enabled": self._sandbox,
+                # Refuse to start rather than print a warning and run Bash unsandboxed.
+                "failIfUnavailable": self._sandbox,
+                "autoAllowBashIfSandboxed": True,
+                "allowUnsandboxedCommands": False,
+                "network": {"allowedDomains": list(self._network_allowlist)},
+                # Bash reads are deny-listed: hide the service's home and data (other jobs,
+                # the job database, credentials), then re-open the workspace and toolchains.
+                "filesystem": {
+                    "denyRead": [str(path) for path in self._read_denied],
+                    "allowRead": [str(workspace), *(str(p) for p in self._read_allowed)],
+                },
+            },
+        )
+        # Not covered by SandboxSettings: the permission layer also refuses reads outside the
+        # working directory, for the file tools and for Bash commands it can analyse.
+        settings = json.dumps({"permissions": {"blockReadsOutsideWorkingDirectories": True}})
         return ClaudeAgentOptions(
             model=self._model,
             effort=self._effort,
@@ -141,6 +162,8 @@ class ClaudeAgent:
             allowed_tools=list(ALLOWED_TOOLS),
             disallowed_tools=list(DISALLOWED_TOOLS),
             # Non-interactive: anything not pre-approved above is denied, never prompted.
+            # (With CLAUDE_CODE_SUBPROCESS_ENV_SCRUB, Claude Code forces "default" mode; the
+            # allowlist still applies and, with no one to ask, prompts resolve to a denial.)
             permission_mode="dontAsk",
             # Never load settings from disk: a repository's .claude/settings.json is untrusted
             # input and could register hooks that run arbitrary commands on the worker.
@@ -148,6 +171,7 @@ class ClaudeAgent:
             max_turns=self._max_turns,
             max_budget_usd=budget,
             sandbox=sandbox,
+            settings=settings,
             hooks={"PreToolUse": [HookMatcher(hooks=[_guard_hook(policy)])]},
             # Blank ticket2pr's own secrets, and have Claude Code strip its credentials
             # (ANTHROPIC_API_KEY, ...) from the environment of every command the agent runs.

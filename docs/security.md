@@ -15,20 +15,23 @@ layers above it can fail.
 | T5 | Supply-chain edits | Agent modifies CI workflows or commits secrets |
 | T6 | Runaway cost | Infinite tool loops, huge diffs, retry storms |
 | T7 | Forged or abusive webhooks | Anyone POSTing to `/webhooks/jira` to trigger runs or exhaust memory |
+| T8 | Agent code running in the target repository's CI | A pushed branch triggers `push`/`pull_request` workflows with the repository's secrets, before any review |
 
 ## Controls
 
 | Control | Where | Threats |
 |---|---|---|
 | Ticket fenced as untrusted data in the prompt; the rules are restated after every untrusted block | `agent/prompts.py` | T1 |
-| Tool allowlist (`Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, `Bash`, `TodoWrite`); no web tools or sub-agents; `permission_mode="dontAsk"` | `agent/claude.py` | T1, T2 |
+| Tool allowlist (`Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, `Bash`, `TodoWrite`); no web tools or sub-agents; nothing outside the allowlist is ever approved (`dontAsk`; with the environment scrub, Claude Code switches to its default mode, where unattended permission prompts resolve to a denial) | `agent/claude.py` | T1, T2 |
 | `setting_sources=[]`: no user/project/local settings, so no repository hooks or permissions | `agent/claude.py` | T3 |
 | ticket2pr's secrets blanked in the agent's environment, and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` so Claude Code strips its own credentials (`ANTHROPIC_API_KEY`, …) from every command the agent runs | `config.py`, `agent/claude.py` | T2 |
-| Agent's Bash in Claude Code's bubblewrap sandbox with a network allowlist and no unsandboxed escape | `agent/claude.py` | T2, T3 |
+| Agent's Bash in Claude Code's bubblewrap sandbox with a network allowlist, no unsandboxed escape, and `failIfUnavailable` (the CLI refuses to start rather than run Bash unsandboxed) | `agent/claude.py` | T2, T3 |
+| Agent reads confined to the workspace: the sandbox's `filesystem.denyRead` hides the service's home, data and working directories (other jobs, the job database, `.env`, the `claude` login) and re-opens only the workspace and toolchains; `permissions.blockReadsOutsideWorkingDirectories` refuses outside reads for the file tools and the Bash commands Claude Code can analyse | `agent/claude.py`, `sandbox.py` | T2 |
 | Repository tests in ticket2pr's bubblewrap sandbox: fresh PID namespace (no other process's `/proc/<pid>/environ`), no network unless `T2P_TEST_NETWORK`, read-only root, writable workspace and private `/tmp` only, an empty `/run` (no host IPC sockets such as the systemd/D-Bus user bus, which would otherwise let `systemd-run --user` start a process outside the sandbox), the service's home, data and working directories hidden, minimal environment, own process group, hard timeout | `sandbox.py`, `verify.py` | T2, T3 |
 | **Fails closed:** Claude Code silently runs Bash unsandboxed when `bwrap`/`socat` are missing, so every job checks them first and is refused (before any clone or spend) when they are absent | `sandbox.py`, `pipeline.py` | T2, T3 |
 | The service process is made non-dumpable (`PR_SET_DUMPABLE=0`), so same-uid processes cannot read its `/proc/<pid>/environ` or memory | `sandbox.py`, `cli.py` | T2 |
 | `PreToolUse` guard: file tools confined to the workspace, `.git/` off limits, protected globs read-only, history/remote/config git commands and environment dumps blocked | `agent/guard.py` | T2, T4, T5 |
+| **Fork mode** (`T2P_FORK_OWNER`): branches go to a fork owned by the bot and PRs are cross-repository, so the target repository's CI treats them as fork PRs (no secrets, read-only token, approval can be required) | `pipeline.py` | T8 |
 | No git command runs in the agent's workspace after the agent started. The tree (never any `.git`) is copied into a fresh **publish clone**, where ticket2pr commits and pushes | `pipeline.py`, `scm/git.py` | T4 |
 | Every ticket2pr git command ignores system and global config, disables hooks, fsmonitor and external attribute files, allows only https/file transports, and gets credentials through `GIT_CONFIG_*` environment variables (never argv or a config file) | `scm/git.py` | T2, T4 |
 | Protected paths unstaged before commit and listed on the PR; paths parsed NUL-separated so unusual names cannot slip through | `pipeline.py`, `scm/git.py` | T5 |
@@ -41,10 +44,20 @@ The guard is defence in depth, not the boundary: it parses shell text heuristica
 toward blocking. The boundaries are the sandboxes, the scrubbed environments and the publish
 clone.
 
-Residual risk: the git process that pushes holds the GitHub token in its environment, which
-any process of the same user could read from `/proc`. No untrusted process runs at that point
-(the agent has exited and the tests' process group was killed), and the sandboxes keep their
-processes in their own PID namespace, so this relies on the sandbox holding.
+Residual risks:
+
+- The git process that pushes holds the GitHub token in its environment, which any process
+  of the same user could read from `/proc`. With the sandbox, every untrusted process lived in
+  a PID namespace that died with it. Without it, ticket2pr is a child subreaper: before
+  publishing it SIGKILLs every descendant (including double-forked, `setsid` daemons), runs
+  one job at a time, and refuses to push if the publish clone's git config changed.
+- `T2P_TEST_NETWORK=true` gives the tests the host's network namespace: unrestricted egress,
+  the host's loopback services and, on cloud VMs, the instance metadata endpoint. Prefer
+  test commands that need no network (dependencies preinstalled in the image), or block
+  `169.254.169.254` and loopback services for the service user at the host firewall.
+- Without fork mode (T8), the target repository's workflows run the agent's code with its
+  secrets as soon as the branch is pushed. Use fork mode, or keep secret-using jobs off
+  `ticket2pr/*` branches (environments with required reviewers, `if:` guards).
 
 ## Deployment guidance
 
@@ -60,9 +73,10 @@ processes in their own PID namespace, so this relies on the sandbox holding.
 - **Containers.** bubblewrap cannot create namespaces in an unprivileged container, so the
   provided `docker-compose.yml` sets `T2P_SANDBOX=false` and relies on the container instead:
   read-only root filesystem, all capabilities dropped, `no-new-privileges`, non-root user,
-  non-dumpable service process. In that mode the agent's Bash and the tests are **not**
-  sandboxed from each other or from the network, and the Claude Code process's own
-  credentials are reachable by them, so:
+  non-dumpable subreaper service process, one job at a time, leftover processes killed
+  before publishing. In that mode the agent's Bash and the tests are **not** sandboxed from
+  the container's files or network, and the Claude Code process's own credentials are
+  reachable by them, so:
   - **restrict egress at the network layer** (Kubernetes `NetworkPolicy`, an egress proxy)
     to `api.anthropic.com`, GitHub, Jira and your package registries;
   - use a dedicated, spend-limited Anthropic key and short-lived GitHub tokens;

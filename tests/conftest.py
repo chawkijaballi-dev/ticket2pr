@@ -51,6 +51,9 @@ def _isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # The shared settings fixture disables the sandbox; CLI tests build Settings from the
     # environment, so they get the same default. tests/test_sandbox.py covers the sandbox.
     monkeypatch.setenv("T2P_SANDBOX", "false")
+    # Unsandboxed jobs reap every descendant of the service process, which here is pytest
+    # itself. tests/test_sandbox.py exercises the real thing in a child process.
+    monkeypatch.setattr("ticket2pr.pipeline.kill_descendants", lambda: 0)
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
     (tmp_path / "gitconfig").write_text(
         "[user]\n\tname = Test\n\temail = test@example.com\n[init]\n\tdefaultBranch = main\n"
