@@ -16,12 +16,12 @@ from rich.logging import RichHandler
 from rich.table import Table
 
 from ticket2pr import __version__
-from ticket2pr.agent.claude import missing_sandbox_tools
 from ticket2pr.config import Settings
 from ticket2pr.domain import Job, JobStatus, is_ticket_key
 from ticket2pr.errors import Ticket2PRError
 from ticket2pr.pipeline import RunOptions
 from ticket2pr.runtime import open_runtime
+from ticket2pr.sandbox import make_process_undumpable, missing_sandbox_tools
 from ticket2pr.store import JobStore
 
 app = typer.Typer(
@@ -58,6 +58,9 @@ def main(
         format="%(message)s",
         handlers=[RichHandler(console=console, show_path=False)],
     )
+    # This process holds the API tokens; keep same-uid processes (the agent, the tests) from
+    # reading them out of /proc/<pid>/environ or /proc/<pid>/mem.
+    make_process_undumpable()
 
 
 def _settings() -> Settings:
@@ -89,7 +92,7 @@ def run(
     if not is_ticket_key(ticket):
         raise typer.BadParameter(f"{ticket!r} is not a ticket key like PROJ-42")
     settings = _settings()
-    options = RunOptions(repo=repo, require_label=require_label, keep_workspace=keep_workspace)
+    options = RunOptions(require_label=require_label, keep_workspace=keep_workspace)
 
     async def _run() -> Job:
         async with open_runtime(settings, tickets_dir=tickets_dir, repos_dir=repos_dir) as rt:
@@ -140,7 +143,7 @@ def jobs(
             str(job.id),
             job.ticket_key,
             f"[{style}]{job.status.value}[/{style}]" if style else job.status.value,
-            f"${job.usage.cost_usd:.2f}",
+            job.usage.cost_label,
             f"{job.usage.total_tokens:,}",
             job.pr_url or (job.error or "")[:80],
         )
@@ -162,7 +165,7 @@ def doctor() -> None:
         "GitHub token": bool(settings.github_token.get_secret_value()),
         "webhook secret": bool(settings.jira_webhook_secret.get_secret_value()),
         "at least one project → repo mapping": bool(settings.repos),
-        "Bash sandbox dependencies (or T2P_BASH_SANDBOX=false)": not settings.bash_sandbox
+        "sandbox: bwrap + socat (or T2P_SANDBOX=false)": not settings.sandbox
         or not missing_sandbox_tools(),
         "graphify (optional)": shutil.which("graphify") is not None,
     }
@@ -208,6 +211,9 @@ def eval_(
             str(result.turns),
         )
     console.print(table)
+    for result in summary.results:
+        if result.error:
+            console.print(f"[red]{result.task}:[/red] {result.error}", soft_wrap=True)
     per_resolved = summary.cost_per_resolved_usd
     console.print(
         f"Resolved {summary.resolve_rate:.0%} of {len(summary.results)} task(s) · "
@@ -227,6 +233,5 @@ def _print_job(job: Job) -> None:
     if job.error:
         console.print(f"Reason: {job.error}", soft_wrap=True)
     console.print(
-        f"Cost ${job.usage.cost_usd:.2f} · {job.usage.total_tokens:,} tokens · "
-        f"{job.usage.turns} turns"
+        f"Cost {job.usage.cost_label} · {job.usage.total_tokens:,} tokens · {job.usage.turns} turns"
     )

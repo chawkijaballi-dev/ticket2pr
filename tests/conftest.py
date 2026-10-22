@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,8 +45,12 @@ def git(cwd: Path, *args: str) -> str:
 def _isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Keep the developer's real configuration (and .env) out of every test."""
     monkeypatch.chdir(tmp_path)
-    for name in ("T2P_REPOS", "T2P_JIRA_BASE_URL", "T2P_GITHUB_TOKEN", "T2P_TEST_COMMAND"):
-        monkeypatch.delenv(name, raising=False)
+    for name in list(os.environ):
+        if name.startswith("T2P_"):
+            monkeypatch.delenv(name)
+    # The shared settings fixture disables the sandbox; CLI tests build Settings from the
+    # environment, so they get the same default. tests/test_sandbox.py covers the sandbox.
+    monkeypatch.setenv("T2P_SANDBOX", "false")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
     (tmp_path / "gitconfig").write_text(
         "[user]\n\tname = Test\n\temail = test@example.com\n[init]\n\tdefaultBranch = main\n"
@@ -88,8 +94,9 @@ def settings(tmp_path: Path) -> Settings:
     return Settings(
         data_dir=tmp_path / "data",
         repos={"CALC": REPO},
-        test_command="python -m pytest -q -p no:cacheprovider",
+        test_command=f"{sys.executable} -m pytest -q -p no:cacheprovider",
         use_graphify=False,
+        sandbox=False,  # the sandbox itself is covered by tests/test_sandbox.py
         max_budget_usd=2.0,
         _env_file=None,
     )

@@ -31,6 +31,7 @@ from ticket2pr.domain import AgentOutcome, AgentResult, JobStatus, Usage, is_tic
 from ticket2pr.errors import ConfigurationError
 from ticket2pr.pipeline import RunOptions
 from ticket2pr.runtime import open_runtime
+from ticket2pr.sandbox import sandbox_profile
 from ticket2pr.verify import run_tests
 
 
@@ -171,7 +172,12 @@ async def _run_task(
         checkout = scratch / "grade"
         _git(scratch, "clone", "-q", "--branch", job.branch, origin.as_uri(), str(checkout))
         shutil.copytree(task.path / "hidden_tests", checkout / "tests", dirs_exist_ok=True)
-        report = await run_tests(pytest_cmd, checkout, timeout_s=settings.test_timeout_s)
+        report = await run_tests(
+            pytest_cmd,
+            checkout,
+            timeout_s=settings.test_timeout_s,
+            sandbox=sandbox_profile(settings),
+        )
         resolved = report.passed
     return EvalResult(
         task=task.name,

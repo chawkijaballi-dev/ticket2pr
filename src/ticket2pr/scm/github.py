@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
 
 from ticket2pr.domain import PullRequest
 from ticket2pr.errors import ConfigurationError, SCMError
+
+logger = logging.getLogger(__name__)
 
 _API_VERSION = "2022-11-28"
 _PUBLIC_API = "https://api.github.com"
@@ -41,32 +44,65 @@ class GitHubClient:
     async def open_or_update_pr(
         self, repo: str, *, head: str, base: str, title: str, body: str, draft: bool
     ) -> PullRequest:
-        """Open a PR for ``head``, or refresh the one already open from a previous run."""
+        """Open a PR for ``head``, or refresh the one already open from a previous run.
+
+        A refreshed PR also gets its draft state synced (red tests → draft, green → ready).
+        The REST API cannot change it, hence the GraphQL mutations. When the change is refused
+        (draft PRs are unavailable on some plans) the PR keeps its state, and the returned
+        ``PullRequest.draft`` says which one it is.
+        """
         owner = repo.split("/", 1)[0]
         existing = await self._request(
             "GET", f"/repos/{repo}/pulls", params={"head": f"{owner}:{head}", "state": "open"}
         )
-        if isinstance(existing, list) and existing:
-            number = int(existing[0]["number"])
-            updated = await self._request(
+        if not (isinstance(existing, list) and existing):
+            created = await self._request(
+                "POST",
+                f"/repos/{repo}/pulls",
+                json={"title": title, "head": head, "base": base, "body": body, "draft": draft},
+            )
+            return _to_pr(created)
+        number = int(existing[0]["number"])
+        updated = _to_pr(
+            await self._request(
                 "PATCH", f"/repos/{repo}/pulls/{number}", json={"title": title, "body": body}
             )
-            return _to_pr(updated)
-        created = await self._request(
-            "POST",
-            f"/repos/{repo}/pulls",
-            json={"title": title, "head": head, "base": base, "body": body, "draft": draft},
         )
-        return _to_pr(created)
+        if updated.draft == draft:
+            return updated
+        try:
+            await self._set_draft(str(existing[0]["node_id"]), draft=draft)
+        except SCMError as exc:
+            logger.warning("could not change the draft state of %s#%s: %s", repo, number, exc)
+            return updated
+        return updated.model_copy(update={"draft": draft})
+
+    async def _set_draft(self, node_id: str, *, draft: bool) -> None:
+        mutation = "convertPullRequestToDraft" if draft else "markPullRequestReadyForReview"
+        query = (
+            f"mutation($id: ID!) {{ {mutation}(input: {{pullRequestId: $id}}) "
+            "{ clientMutationId } }"
+        )
+        data = await self._request(
+            "POST", self._graphql_url, json={"query": query, "variables": {"id": node_id}}
+        )
+        if isinstance(data, dict) and data.get("errors"):
+            raise SCMError(f"GitHub GraphQL {mutation} failed: {data['errors']}")
+
+    @property
+    def _graphql_url(self) -> str:
+        # Absolute: https://api.github.com/graphql, or https://<host>/api/graphql on GHES.
+        if self._api_url == _PUBLIC_API:
+            return f"{_PUBLIC_API}/graphql"
+        return f"{self._api_url.removesuffix('/api/v3')}/api/graphql"
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         try:
-            response = await self._client.request(
-                method, self._api_url + path, headers=self._headers, **kwargs
-            )
+            url = path if path.startswith(("https://", "http://")) else self._api_url + path
+            response = await self._client.request(method, url, headers=self._headers, **kwargs)
         except httpx.HTTPError as exc:
             raise SCMError(f"GitHub {method} {path} failed: {exc}") from exc
         if response.is_error:

@@ -13,17 +13,13 @@ from claude_agent_sdk import (
     HookCallback,
     HookContext,
     HookInput,
+    ResultError,
     ResultMessage,
     TextBlock,
 )
 
 from ticket2pr.agent.base import AgentTask
-from ticket2pr.agent.claude import (
-    ALLOWED_TOOLS,
-    ClaudeAgent,
-    missing_sandbox_tools,
-    usage_from_result,
-)
+from ticket2pr.agent.claude import ALLOWED_TOOLS, ClaudeAgent, usage_from_result
 from ticket2pr.config import SECRET_ENV_VARS
 from ticket2pr.domain import AgentOutcome, Ticket
 from ticket2pr.errors import ConfigurationError
@@ -65,7 +61,7 @@ def _agent(query_fn: Any, **overrides: Any) -> ClaudeAgent:
 
 @pytest.fixture(autouse=True)
 def _sandbox_available(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("ticket2pr.agent.claude.missing_sandbox_tools", list)
+    monkeypatch.setattr("ticket2pr.sandbox.missing_sandbox_tools", list)
 
 
 @pytest.fixture
@@ -121,9 +117,18 @@ async def test_success_maps_usage_and_summary(task: AgentTask) -> None:
     ],
 )
 async def test_error_subtypes(task: AgentTask, subtype: str, outcome: AgentOutcome) -> None:
-    result = await _agent(Recorder(_result(subtype, result=None))).run(task)
+    class FailingRun(Recorder):
+        """Like the real SDK: yield the error result, then raise ResultError."""
+
+        async def _stream(self) -> AsyncIterator[Any]:
+            yield _result(subtype, result=None, total_cost_usd=2.5)
+            raise ResultError("Claude Code returned an error result", exit_code=1)
+
+    result = await _agent(FailingRun()).run(task)
     assert result.outcome is outcome
     assert not result.ok
+    assert result.usage.cost_usd == 2.5  # the spend is kept, not lost with the exception
+    assert result.usage.cost_capped is False
 
 
 async def test_summary_falls_back_to_last_assistant_text(task: AgentTask) -> None:
@@ -152,6 +157,9 @@ async def test_sdk_errors_are_contained(task: AgentTask) -> None:
     result = await _agent(failing).run(task)
     assert result.outcome is AgentOutcome.ERROR
     assert "cli died" in result.summary
+    # No result message: the exact cost is unknown, so the run counts as its whole budget.
+    assert result.usage.cost_usd == 1.5
+    assert result.usage.cost_capped is True
 
 
 async def test_timeout(task: AgentTask) -> None:
@@ -164,6 +172,8 @@ async def test_timeout(task: AgentTask) -> None:
 
     result = await _agent(slow, timeout_s=0.05).run(task)
     assert result.outcome is AgentOutcome.TIMEOUT
+    assert result.usage.cost_capped is True
+    assert result.usage.cost_label == "≤ $1.50"
 
 
 async def test_options_lock_down_the_agent(task: AgentTask) -> None:
@@ -185,11 +195,12 @@ async def test_options_lock_down_the_agent(task: AgentTask) -> None:
     assert options.sandbox["allowUnsandboxedCommands"] is False
     assert options.sandbox["network"] == {"allowedDomains": ["pypi.org"]}
     assert all(options.env[name] == "" for name in SECRET_ENV_VARS)
+    assert options.env["CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"] == "1"
 
 
 async def test_bash_sandbox_can_be_disabled(task: AgentTask) -> None:
     query = Recorder(_result())
-    await _agent(query, bash_sandbox=False).run(task)
+    await _agent(query, sandbox=False).run(task)
     sandbox = query.calls[0][1].sandbox
     assert sandbox is not None
     assert sandbox["enabled"] is False
@@ -256,26 +267,10 @@ def test_usage_from_result_tolerates_missing_fields() -> None:
 async def test_fails_closed_when_sandbox_cannot_start(
     task: AgentTask, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("ticket2pr.agent.claude.missing_sandbox_tools", lambda: ["socat"])
+    monkeypatch.setattr("ticket2pr.sandbox.missing_sandbox_tools", lambda: ["socat"])
     query = Recorder(_result())
     with pytest.raises(ConfigurationError, match="missing: socat"):
         await _agent(query).run(task)
     assert query.calls == []  # the agent never started
-    await _agent(query, bash_sandbox=False).run(task)  # explicit opt-out still works
+    await _agent(query, sandbox=False).run(task)  # explicit opt-out still works
     assert len(query.calls) == 1
-
-
-@pytest.mark.parametrize(
-    ("platform", "which", "missing"),
-    [
-        ("linux", {"bwrap": "/usr/bin/bwrap", "socat": "/usr/bin/socat"}, []),
-        ("linux", {"bwrap": "/usr/bin/bwrap"}, ["socat"]),
-        ("darwin", {"sandbox-exec": "/usr/bin/sandbox-exec"}, []),
-        ("win32", {}, ["no Bash sandbox on win32"]),
-    ],
-)
-def test_missing_sandbox_tools(
-    monkeypatch: pytest.MonkeyPatch, platform: str, which: dict[str, str], missing: list[str]
-) -> None:
-    monkeypatch.setattr("shutil.which", which.get)
-    assert missing_sandbox_tools(platform) == missing

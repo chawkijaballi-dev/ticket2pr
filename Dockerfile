@@ -10,11 +10,15 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-dev --no-ins
 COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-dev
 
-# ── runtime: git + the Claude Code sandbox dependencies, non-root ─────
+# ── runtime: git, the sandbox dependencies and a Python test toolchain, non-root ─
+# The repositories' tests run with their own toolchain, not ticket2pr's virtualenv: this image
+# ships uv (for `T2P_TEST_COMMAND="uv run --frozen pytest"`, with T2P_TEST_NETWORK=true).
+# For other stacks (Node, Go, ...), build FROM this image and add them.
 FROM python:3.12-slim-bookworm
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates bubblewrap socat \
     && rm -rf /var/lib/apt/lists/*
+COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /uvx /usr/local/bin/
 RUN useradd --create-home --uid 10001 ticket2pr
 COPY --from=build --chown=ticket2pr:ticket2pr /app /app
 ENV PATH="/app/.venv/bin:$PATH" \

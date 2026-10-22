@@ -5,10 +5,11 @@
 1. **The harness owns side effects.** The agent edits files and runs commands in a scratch
    clone. Everything that leaves the machine (commits, pushes, PRs, comments) is done by
    deterministic code after the agent has stopped.
-2. **Ports and adapters.** The pipeline depends on four protocols, `Tracker`, `RepoHost`,
-   `CodingAgent` and the `JobStore`, never on Jira, GitHub or the SDK directly. Production
-   adapters and offline adapters (`LocalTracker`, `LocalHost`, scripted agents) are
-   interchangeable, which is what makes the end-to-end tests and the eval suite possible.
+2. **Ports and adapters.** The pipeline talks to the outside world through three protocols,
+   `Tracker`, `RepoHost` and `CodingAgent`, never through Jira, GitHub or the SDK directly
+   (git, the test runner and the SQLite `JobStore` are concrete). Production adapters and
+   offline adapters (`LocalTracker`, `LocalHost`, scripted agents) are interchangeable, which
+   is what makes the end-to-end tests and the eval suite possible.
 3. **Failures are data.** Every expected failure is a `Ticket2PRError` subclass. The pipeline
    turns it into a terminal job status with a human-readable reason, reports it on the ticket
    and keeps the spend. Unexpected exceptions are caught at the same boundary, logged with a

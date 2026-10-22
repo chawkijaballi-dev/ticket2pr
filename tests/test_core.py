@@ -18,6 +18,7 @@ from ticket2pr.domain import (
     ChangeSet,
     Job,
     JobStatus,
+    PullRequest,
     TestReport,
     Ticket,
     Usage,
@@ -58,6 +59,8 @@ def test_usage_addition_and_totals() -> None:
     assert total.total_tokens == 10
     assert total.cost_usd == 0.75
     assert (total.turns, total.duration_s) == (3, 1.5)
+    assert total.cost_capped is False
+    assert (total + Usage(cost_capped=True)).cost_capped is True
 
 
 def test_status_terminality() -> None:
@@ -188,30 +191,30 @@ def test_detect_test_command(tmp_path: Path, files: dict[str, str], expected: st
 
 
 async def test_run_tests_pass_fail_and_missing(tmp_path: Path) -> None:
-    passed = await run_tests("echo ok", tmp_path, timeout_s=10)
+    passed = await run_tests("echo ok", tmp_path, timeout_s=10, sandbox=None)
     assert passed.passed
     assert passed.exit_code == 0
     assert "ok" in passed.output_tail
 
-    failed = await run_tests("echo boom >&2; exit 3", tmp_path, timeout_s=10)
+    failed = await run_tests("echo boom >&2; exit 3", tmp_path, timeout_s=10, sandbox=None)
     assert not failed.passed
     assert failed.exit_code == 3
     assert "boom" in failed.output_tail
 
-    missing = await run_tests(None, tmp_path, timeout_s=10)
+    missing = await run_tests(None, tmp_path, timeout_s=10, sandbox=None)
     assert not missing.ran
     assert not missing.passed
 
 
 async def test_run_tests_hides_secrets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("T2P_GITHUB_TOKEN", "leak-me")
-    report = await run_tests("env", tmp_path, timeout_s=10)
+    report = await run_tests("env", tmp_path, timeout_s=10, sandbox=None)
     assert "leak-me" not in report.output_tail
     assert "CI=true" in report.output_tail
 
 
 async def test_run_tests_timeout_kills_process_group(tmp_path: Path) -> None:
-    report = await run_tests("sleep 30 & sleep 30", tmp_path, timeout_s=0.3)
+    report = await run_tests("sleep 30 & sleep 30", tmp_path, timeout_s=0.3, sandbox=None)
     assert not report.passed
     assert report.exit_code is None
     assert "Timed out" in report.output_tail
@@ -220,6 +223,7 @@ async def test_run_tests_timeout_kills_process_group(tmp_path: Path) -> None:
 # ── render ──────────────────────────────────────────────────────────────
 
 TICKET = Ticket(key="PROJ-1", title="Fix", url="https://acme.atlassian.net/browse/PROJ-1")
+PR = PullRequest(number=1, url="https://x.test/pr/1")
 USAGE = Usage(input_tokens=1000, output_tokens=200, cache_read_tokens=50, cost_usd=1.234, turns=3)
 
 
@@ -263,22 +267,31 @@ def test_pr_body_without_tests_or_summary() -> None:
 @pytest.mark.parametrize(
     ("tests", "expected"),
     [
-        (None, "Tests were not run"),
-        (TestReport(command=None, passed=False), "Tests were not run"),
+        (None, "No tests were run"),
+        (TestReport(command=None, passed=False), "No tests were run"),
         (TestReport(command="pytest", passed=True), "Tests pass"),
         (TestReport(command="pytest", passed=False), "Tests fail"),
     ],
 )
 def test_tracker_comment_with_pr(tests: TestReport | None, expected: str) -> None:
-    text = render.tracker_comment(pr_url="https://x.test/pr/1", tests=tests, usage=USAGE)
+    text = render.tracker_comment(pr=PR, tests=tests, usage=USAGE)
     assert expected in text
     assert "$1.23" in text
+    assert "opened a pull request" in text
+
+
+def test_tracker_comment_names_drafts_and_capped_costs() -> None:
+    draft = PullRequest(number=1, url="https://x.test/pr/1", draft=True)
+    capped = Usage(cost_usd=2.0, cost_capped=True)
+    text = render.tracker_comment(pr=draft, tests=None, usage=capped)
+    assert "opened a draft pull request" in text
+    assert "≤ $2.00" in text
 
 
 def test_tracker_comment_on_failure() -> None:
-    text = render.tracker_comment(pr_url=None, tests=None, usage=USAGE, error="boom")
+    text = render.tracker_comment(pr=None, tests=None, usage=USAGE, error="boom")
     assert "could not open a pull request: boom" in text
-    assert "unknown error" in render.tracker_comment(pr_url=None, tests=None, usage=USAGE)
+    assert "unknown error" in render.tracker_comment(pr=None, tests=None, usage=USAGE)
 
 
 def test_configuration_docs_are_up_to_date() -> None:

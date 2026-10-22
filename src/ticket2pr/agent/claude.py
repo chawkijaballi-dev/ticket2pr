@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import shutil
-import sys
 import time
 from collections.abc import AsyncIterator, Callable
 from typing import Any
@@ -29,7 +27,7 @@ from ticket2pr.agent.guard import Policy
 from ticket2pr.agent.prompts import SYSTEM_PROMPT, build_prompt
 from ticket2pr.config import SECRET_ENV_VARS, Effort
 from ticket2pr.domain import AgentOutcome, AgentResult, Usage
-from ticket2pr.errors import ConfigurationError
+from ticket2pr.sandbox import ensure_sandbox_available
 
 logger = logging.getLogger(__name__)
 
@@ -43,19 +41,6 @@ _OUTCOMES = {
     "error_max_turns": AgentOutcome.MAX_TURNS,
     "error_max_budget_usd": AgentOutcome.BUDGET_EXCEEDED,
 }
-
-# What Claude Code's Bash sandbox needs on each platform. When one is missing, Claude Code
-# prints a warning and runs commands *unsandboxed*, so ticket2pr checks first and fails closed.
-_SANDBOX_TOOLS = {"linux": ("bwrap", "socat"), "darwin": ("sandbox-exec",)}
-
-
-def missing_sandbox_tools(platform: str = sys.platform) -> list[str]:
-    """Return the sandbox dependencies missing on this machine (empty when it can sandbox)."""
-    required = _SANDBOX_TOOLS.get(platform)
-    if required is None:
-        return [f"no Bash sandbox on {platform}"]
-    return [tool for tool in required if shutil.which(tool) is None]
-
 
 # Seam for tests: same signature as ``claude_agent_sdk.query``.
 QueryFn = Callable[..., AsyncIterator[Any]]
@@ -72,7 +57,7 @@ class ClaudeAgent:
         timeout_s: float,
         protected_globs: tuple[str, ...] = (),
         network_allowlist: tuple[str, ...] = (),
-        bash_sandbox: bool = True,
+        sandbox: bool = True,
         query_fn: QueryFn = query,
     ) -> None:
         self._model = model
@@ -82,20 +67,27 @@ class ClaudeAgent:
         self._timeout_s = timeout_s
         self._protected_globs = protected_globs
         self._network_allowlist = network_allowlist
-        self._bash_sandbox = bash_sandbox
+        self._sandbox = sandbox
         self._query = query_fn
 
     async def run(self, task: AgentTask) -> AgentResult:
-        if self._bash_sandbox and (missing := missing_sandbox_tools()):
-            raise ConfigurationError(
-                f"the Bash sandbox cannot start (missing: {', '.join(missing)}). Install them, "
-                "or set T2P_BASH_SANDBOX=false if the worker already runs in an isolated container"
-            )
+        if self._sandbox:
+            ensure_sandbox_available()
+        budget = min(self._max_budget_usd, task.budget_usd or self._max_budget_usd)
         policy = Policy(workspace=task.workspace, protected_globs=self._protected_globs)
-        options = self.build_options(task, policy)
+        options = self.build_options(task, policy, budget)
         started = time.monotonic()
         result: ResultMessage | None = None
         last_text = ""
+
+        def interrupted(outcome: AgentOutcome, summary: str) -> AgentResult:
+            # No result message means no cost report: count the whole budget, so the job's
+            # spend and the retry budget err on the safe side.
+            usage = Usage(cost_usd=budget, cost_capped=True, duration_s=time.monotonic() - started)
+            return AgentResult(
+                outcome=outcome, summary=summary, usage=usage, denied_actions=tuple(policy.denied)
+            )
+
         try:
             async with asyncio.timeout(self._timeout_s):
                 async for message in self._query(prompt=build_prompt(task), options=options):
@@ -106,28 +98,17 @@ class ClaudeAgent:
                         result = message
         except TimeoutError:
             logger.warning("agent timed out after %ss on %s", self._timeout_s, task.ticket.key)
-            return AgentResult(
-                outcome=AgentOutcome.TIMEOUT,
-                summary=last_text,
-                usage=Usage(duration_s=time.monotonic() - started),
-                denied_actions=tuple(policy.denied),
-            )
+            return interrupted(AgentOutcome.TIMEOUT, last_text)
         except ClaudeSDKError as exc:
-            logger.exception("agent failed on %s", task.ticket.key)
-            return AgentResult(
-                outcome=AgentOutcome.ERROR,
-                summary=f"Agent error: {exc}",
-                usage=Usage(duration_s=time.monotonic() - started),
-                denied_actions=tuple(policy.denied),
-            )
+            # A failed run (budget, max turns, API error) yields its ResultMessage, then the CLI
+            # exits non-zero and the SDK raises ResultError: the result already has the facts.
+            if result is None:
+                logger.exception("agent failed on %s", task.ticket.key)
+                return interrupted(AgentOutcome.ERROR, f"Agent error: {exc}")
+            logger.info("agent run on %s ended with %s", task.ticket.key, result.subtype)
 
         if result is None:
-            return AgentResult(
-                outcome=AgentOutcome.ERROR,
-                summary="The agent ended without a result message.",
-                usage=Usage(duration_s=time.monotonic() - started),
-                denied_actions=tuple(policy.denied),
-            )
+            return interrupted(AgentOutcome.ERROR, "The agent ended without a result message.")
         return AgentResult(
             outcome=_OUTCOMES.get(result.subtype, AgentOutcome.ERROR),
             summary=(result.result or last_text).strip(),
@@ -136,9 +117,9 @@ class ClaudeAgent:
             denied_actions=tuple(policy.denied),
         )
 
-    def build_options(self, task: AgentTask, policy: Policy) -> ClaudeAgentOptions:
+    def build_options(self, task: AgentTask, policy: Policy, budget: float) -> ClaudeAgentOptions:
         sandbox: SandboxSettings = {
-            "enabled": self._bash_sandbox,
+            "enabled": self._sandbox,
             "autoAllowBashIfSandboxed": True,
             "allowUnsandboxedCommands": False,
             "network": {"allowedDomains": list(self._network_allowlist)},
@@ -156,10 +137,12 @@ class ClaudeAgent:
             # input and could register hooks that run arbitrary commands on the worker.
             setting_sources=[],
             max_turns=self._max_turns,
-            max_budget_usd=min(self._max_budget_usd, task.budget_usd or self._max_budget_usd),
+            max_budget_usd=budget,
             sandbox=sandbox,
             hooks={"PreToolUse": [HookMatcher(hooks=[_guard_hook(policy)])]},
-            env=dict.fromkeys(SECRET_ENV_VARS, ""),
+            # Blank ticket2pr's own secrets, and have Claude Code strip its credentials
+            # (ANTHROPIC_API_KEY, ...) from the environment of every command the agent runs.
+            env={**dict.fromkeys(SECRET_ENV_VARS, ""), "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"},
         )
 
 

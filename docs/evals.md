@@ -12,7 +12,7 @@ numbers that matter to a team deciding whether to adopt it:
 ```text
 evals/tasks/<name>/
 ├── ticket.yaml       key, title, description, type, labels (what the agent receives)
-├── repo/             the repository before the change, committed as `main`
+├── repo/             the repository before the change, committed as T2P_BASE_BRANCH
 ├── hidden_tests/     copied into tests/ only at grading time
 └── solution/         reference files, overlaid by the oracle agent
 ```
@@ -26,10 +26,11 @@ branch, adds the hidden tests and runs pytest. A task is resolved only if all of
 | `--agent` | What it measures | Cost |
 |---|---|---|
 | `oracle` (default) | That every task is solvable and graded correctly, and that the harness works. Runs in CI. | Free |
-| `claude` | The Claude agent with your `T2P_MODEL` / `T2P_EFFORT` / budget settings. | API usage |
+| `claude` | The Claude agent with your `T2P_MODEL` / `T2P_EFFORT` / budget settings. Needs the sandbox (bubblewrap + socat) or `T2P_SANDBOX=false`. | API usage |
 
-A test also checks that a do-nothing agent resolves nothing, which guards against tasks
-whose hidden tests already pass.
+A test also runs an agent that only edits the README: a PR opens, the hidden tests run
+against the unfixed code, and none may pass. This guards against tasks whose hidden tests
+already pass.
 
 ## Usage
 
@@ -49,4 +50,4 @@ gate a release.
 Prefer small, realistic tickets with an unambiguous acceptance criterion that the hidden
 tests check, and make sure `repo/` contains visible tests in the same style (the agent
 should be able to infer how to test). Run `make eval` and `pytest tests/test_evals.py`: the
-oracle must resolve it and the do-nothing agent must not.
+oracle must resolve it and the README-only agent must not.

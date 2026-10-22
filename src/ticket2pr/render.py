@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from ticket2pr.domain import AgentResult, ChangeSet, TestReport, Ticket, Usage
+from ticket2pr.domain import AgentResult, ChangeSet, PullRequest, TestReport, Ticket, Usage
 
 _MAX_SUMMARY_CHARS = 6_000
 _MAX_TEST_TAIL_CHARS = 3_000
@@ -44,10 +44,7 @@ def pr_body(
         lines = [f"- Blocked: `{action}`" for action in agent.denied_actions]
         lines += [f"- Not committed (protected path): `{path}`" for path in excluded]
         sections.append("## Guardrail events\n\n" + "\n".join(lines))
-    sections.append(
-        "---\n_Opened by [ticket2pr](https://github.com/OWNER/ticket2pr). "
-        "Review it like any other contribution._"
-    )
+    sections.append("---\n_Opened by ticket2pr. Review it like any other contribution._")
     return "\n\n".join(sections)
 
 
@@ -55,7 +52,7 @@ def usage_table(usage: Usage, *, model: str) -> str:
     return (
         "| Model | Cost | Tokens (in / out / cache read) | Turns | Duration |\n"
         "|---|---|---|---|---|\n"
-        f"| `{model}` | ${usage.cost_usd:.2f} | "
+        f"| `{model}` | {usage.cost_label} | "
         f"{usage.input_tokens:,} / {usage.output_tokens:,} / {usage.cache_read_tokens:,} | "
         f"{usage.turns} | {usage.duration_s / 60:.1f} min |"
     )
@@ -82,24 +79,29 @@ def _fence_for(text: str) -> str:
 
 
 def tracker_comment(
-    *, pr_url: str | None, tests: TestReport | None, usage: Usage, error: str | None = None
+    *,
+    pr: PullRequest | None,
+    tests: TestReport | None,
+    usage: Usage,
+    error: str | None = None,
 ) -> str:
-    if pr_url is None:
+    if pr is None:
         reason = error or "unknown error"
         return (
             f"ticket2pr could not open a pull request: {reason}\n\n"
-            f"Spent ${usage.cost_usd:.2f} over {usage.turns} agent turns."
+            f"Spent {usage.cost_label} over {usage.turns} agent turns."
         )
+    kind = "draft pull request" if pr.draft else "pull request"
     if tests is None or not tests.ran:
-        status = "Tests were not run, so the PR is a draft that needs a careful review."
+        status = "No tests were run: review this change carefully."
     elif tests.passed:
         status = f"Tests pass (`{tests.command}`)."
     else:
-        status = f"Tests fail (`{tests.command}`), so the PR is a draft."
+        status = f"Tests fail (`{tests.command}`): see the PR for the output."
     return (
-        f"ticket2pr opened a pull request: [{pr_url}]({pr_url})\n\n"
+        f"ticket2pr opened a {kind}: [{pr.url}]({pr.url})\n\n"
         f"{status}\n\n"
-        f"- Cost: `${usage.cost_usd:.2f}`\n"
+        f"- Cost: `{usage.cost_label}`\n"
         f"- Tokens: `{usage.total_tokens:,}`\n"
         f"- Agent turns: `{usage.turns}`"
     )

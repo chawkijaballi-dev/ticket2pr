@@ -22,6 +22,11 @@ jobs:
         python: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
+      - name: Sandbox dependencies
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q bubblewrap socat
+          # Ubuntu 24.04 restricts unprivileged user namespaces, which bubblewrap needs.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true

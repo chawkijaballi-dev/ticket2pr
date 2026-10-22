@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import pytest
+from pydantic import SecretStr
 
 from conftest import (
     REPO,
@@ -20,7 +23,7 @@ from conftest import (
 )
 from ticket2pr.agent.base import AgentTask
 from ticket2pr.config import Settings
-from ticket2pr.domain import AgentOutcome, Job, JobStatus
+from ticket2pr.domain import AgentOutcome, AgentResult, Job, JobStatus
 from ticket2pr.pipeline import RunOptions
 from ticket2pr.store import JobStore
 
@@ -150,13 +153,14 @@ async def test_git_config_tampering_is_reverted_before_push(
 ) -> None:
     attacker = tmp_path / "attacker.git"
     git(tmp_path, "init", "-q", "--bare", str(attacker))
+    marker = tmp_path / "pwned"
 
     def tamper(task: AgentTask) -> None:
         fix_add(task)
         origin = (repos_dir / REPO).resolve().as_uri()
         git(task.workspace, "config", f"url.{attacker.as_uri()}.insteadOf", origin)
         hook = task.workspace / ".git" / "hooks" / "pre-push"
-        hook.write_text("#!/bin/sh\ntouch /tmp/ticket2pr-pwned\n")
+        hook.write_text(f"#!/bin/sh\ntouch {marker}\n")
         hook.chmod(0o755)
 
     job = await make_pipeline(ScriptedAgent([tamper])).run(claim(store, "CALC-1"))
@@ -164,7 +168,7 @@ async def test_git_config_tampering_is_reverted_before_push(
     assert job.status is JobStatus.SUCCEEDED
     assert git(attacker, "branch", "--list").strip() == ""
     assert _branch(job) in git(repos_dir / REPO, "branch", "--list")
-    assert not Path("/tmp/ticket2pr-pwned").exists()
+    assert not marker.exists()
 
 
 async def test_too_many_files_is_a_policy_violation(
@@ -232,7 +236,7 @@ async def test_workspace_is_removed_unless_kept(
     assert not (settings.workspaces_dir / f"job-{job.id}").exists()
 
     kept = await pipeline.run(claim(store, "CALC-1"), RunOptions(keep_workspace=True))
-    assert (settings.workspaces_dir / f"job-{kept.id}" / "calc.py").exists()
+    assert (settings.workspaces_dir / f"job-{kept.id}" / "work" / "calc.py").exists()
 
 
 async def test_rerun_updates_the_existing_pr(make_pipeline: MakePipeline, store: JobStore) -> None:
@@ -279,3 +283,182 @@ async def test_graphify_runs_when_available(
     assert seen == [True]
     files = git(repos_dir / REPO, "show", "--name-only", "--format=", _branch(job)).split()
     assert files == ["calc.py"]  # the graph is never committed
+
+
+async def test_commondir_redirect_cannot_hijack_the_push(
+    make_pipeline: MakePipeline, store: JobStore, repos_dir: Path, tmp_path: Path
+) -> None:
+    """Restoring .git/config is not enough: git also reads config from ``commondir``."""
+    attacker = tmp_path / "attacker.git"
+    git(tmp_path, "init", "-q", "--bare", str(attacker))
+    evil = tmp_path / "evil-common"
+
+    def redirect(task: AgentTask) -> None:
+        fix_add(task)
+        origin = (repos_dir / REPO).resolve().as_uri()
+        shutil.copytree(task.workspace / ".git", evil)
+        (evil / "config").write_text(
+            (evil / "config").read_text() + f'[url "{attacker.as_uri()}"]\n\tinsteadOf = {origin}\n'
+        )
+        (task.workspace / ".git" / "commondir").write_text(str(evil))
+
+    job = await make_pipeline(ScriptedAgent([redirect])).run(claim(store, "CALC-1"))
+
+    assert job.status is JobStatus.SUCCEEDED, job.error
+    assert git(attacker, "branch", "--list").strip() == ""
+    assert _branch(job) in git(repos_dir / REPO, "branch", "--list")
+
+
+async def test_global_git_config_is_ignored(
+    make_pipeline: MakePipeline, store: JobStore, repos_dir: Path, tmp_path: Path
+) -> None:
+    attacker = tmp_path / "attacker.git"
+    git(tmp_path, "init", "-q", "--bare", str(attacker))
+
+    def poison_global_config(task: AgentTask) -> None:
+        fix_add(task)
+        origin = (repos_dir / REPO).resolve().as_uri()
+        global_config = Path(os.environ["GIT_CONFIG_GLOBAL"])
+        global_config.write_text(
+            global_config.read_text() + f'[url "{attacker.as_uri()}"]\n\tinsteadOf = {origin}\n'
+        )
+
+    job = await make_pipeline(ScriptedAgent([poison_global_config])).run(claim(store, "CALC-1"))
+    assert job.status is JobStatus.SUCCEEDED, job.error
+    assert git(attacker, "branch", "--list").strip() == ""
+
+
+async def test_non_ascii_protected_paths_are_not_committed(
+    make_pipeline: MakePipeline, store: JobStore, repos_dir: Path
+) -> None:
+    def sneaky(task: AgentTask) -> None:
+        fix_add(task)
+        (task.workspace / ".github" / "workflows").mkdir(parents=True)
+        (task.workspace / ".github" / "workflows" / "évil.yml").write_text("on: push\n")
+        (task.workspace / "clé.pem").write_text("key\n")
+
+    job = await make_pipeline(ScriptedAgent([sneaky])).run(claim(store, "CALC-1"))
+    files = git(repos_dir / REPO, "show", "--name-only", "--format=", _branch(job)).split()
+    assert files == ["calc.py"]
+
+
+async def test_secrets_in_the_change_are_never_pushed(
+    make_pipeline: MakePipeline, store: JobStore, repos_dir: Path
+) -> None:
+    def leak(task: AgentTask) -> None:
+        fix_add(task)
+        (task.workspace / "notes.txt").write_text("token: ghp_supersecret123\n")
+
+    pipeline = make_pipeline(ScriptedAgent([leak]), github_token=SecretStr("ghp_supersecret123"))
+    job = await pipeline.run(claim(store, "CALC-1"))
+    assert job.status is JobStatus.FAILED
+    assert "contains a configured secret" in (job.error or "")
+    assert "ticket2pr/" not in git(repos_dir / REPO, "branch", "--list")
+
+
+async def test_agent_summary_secrets_are_redacted_in_the_pr(
+    make_pipeline: MakePipeline, store: JobStore
+) -> None:
+    class LeakySummary(ScriptedAgent):
+        async def run(self, task: AgentTask) -> AgentResult:
+            result = await super().run(task)
+            return result.model_copy(update={"summary": "token ghp_supersecret123"})
+
+    pipeline = make_pipeline(LeakySummary([fix_add]), github_token=SecretStr("ghp_supersecret123"))
+    job = await pipeline.run(claim(store, "CALC-1"))
+    body = str(_pr(job)["body"])
+    assert "ghp_supersecret123" not in body
+    assert "[REDACTED]" in body
+
+
+async def test_failed_retry_keeps_the_first_attempt_as_a_draft(
+    make_pipeline: MakePipeline, store: JobStore
+) -> None:
+    class StopsOnRetry(ScriptedAgent):
+        async def run(self, task: AgentTask) -> AgentResult:
+            result = await super().run(task)
+            if len(self.tasks) == 2:
+                return result.model_copy(update={"outcome": AgentOutcome.BUDGET_EXCEEDED})
+            return result
+
+    job = await make_pipeline(StopsOnRetry([break_differently])).run(claim(store, "CALC-1"))
+    assert job.status is JobStatus.NEEDS_REVIEW
+    pr = _pr(job)
+    assert pr["draft"] is True
+    assert "stopped early (budget_exceeded)" in str(pr["body"])
+
+
+async def test_without_drafts_the_comment_says_so(
+    make_pipeline: MakePipeline, store: JobStore, tickets_dir: Path
+) -> None:
+    agent = ScriptedAgent([break_differently])
+    job = await make_pipeline(agent, draft_on_test_failure=False).run(claim(store, "CALC-1"))
+    assert job.status is JobStatus.NEEDS_REVIEW
+    assert _pr(job)["draft"] is False
+    comment = (tickets_dir / "CALC-1.comments.md").read_text()
+    assert "opened a pull request" in comment
+    assert "Tests fail" in comment
+
+
+async def test_sandbox_unavailable_fails_before_spending(
+    make_pipeline: MakePipeline, store: JobStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("ticket2pr.sandbox.missing_sandbox_tools", lambda: ["socat"])
+    agent = ScriptedAgent([fix_add])
+    job = await make_pipeline(agent, sandbox=True).run(claim(store, "CALC-1"))
+    assert job.status is JobStatus.FAILED
+    assert "missing: socat" in (job.error or "")
+    assert agent.tasks == []
+
+
+async def test_hung_graphify_is_killed(
+    make_pipeline: MakePipeline,
+    store: JobStore,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "graphify"
+    fake.write_text(f"#!/bin/sh\necho $$ > {tmp_path}/graphify.pid\nexec sleep 60\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    monkeypatch.setattr("ticket2pr.pipeline.GRAPHIFY_TIMEOUT_S", 0.5)
+
+    job = await make_pipeline(ScriptedAgent([fix_add]), use_graphify=True).run(
+        claim(store, "CALC-1")
+    )
+    assert job.status is JobStatus.SUCCEEDED
+    pid = int((tmp_path / "graphify.pid").read_text())
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux" or shutil.which("bwrap") is None, reason="needs bubblewrap"
+)
+async def test_end_to_end_with_the_real_test_sandbox(
+    make_pipeline: MakePipeline, store: JobStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The repository's tests really run inside bubblewrap (socat is only for the agent)."""
+    monkeypatch.setattr("ticket2pr.sandbox.missing_sandbox_tools", list)
+    monkeypatch.setenv("T2P_GITHUB_TOKEN", "ghp_from_the_environment")
+
+    def fix_and_spy(task: AgentTask) -> None:
+        fix_add(task)
+        (task.workspace / "tests" / "test_spy.py").write_text(
+            "import glob\n\n\n"
+            "def test_no_secret_in_any_visible_environment():\n"
+            "    for path in glob.glob('/proc/*/environ'):\n"
+            "        try:\n"
+            "            data = open(path, 'rb').read()\n"
+            "        except OSError:\n"
+            "            continue\n"
+            "        assert b'ghp_from_the_environment' not in data\n"
+        )
+
+    job = await make_pipeline(ScriptedAgent([fix_and_spy]), sandbox=True).run(
+        claim(store, "CALC-1")
+    )
+    assert job.status is JobStatus.SUCCEEDED, job.error
+    assert job.tests_passed is True

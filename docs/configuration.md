@@ -25,7 +25,9 @@ in the working directory. Lists and mappings are JSON, e.g.
 | `T2P_MAX_BUDGET_USD` | `5.0` | Hard spend cap per ticket. |
 | `T2P_MAX_TURNS` | `80` | Agent turn cap per attempt. |
 | `T2P_AGENT_TIMEOUT_S` | `1800` | Wall-clock limit per agent attempt, in seconds. |
-| `T2P_BASH_SANDBOX` | `true` | OS-level sandbox for the agent's Bash (bubblewrap on Linux, Seatbelt on macOS). Disable only when the worker itself runs in an isolated container. |
+| `T2P_SANDBOX` | `true` | Run the agent's Bash and the repository's tests in a bubblewrap sandbox (Linux; needs bwrap and socat). Jobs fail when it cannot start. Disable only when the worker itself runs in an isolated, egress-restricted container. |
+| `T2P_TEST_NETWORK` | `false` | Give the sandboxed test run network access (e.g. when the test command installs dependencies, like `uv run pytest`). |
+| `T2P_SANDBOX_READONLY_PATHS` | `[]` | Extra toolchain directories under $HOME or the working directory that the test sandbox must still see (read-only). |
 | `T2P_NETWORK_ALLOWLIST` | `["pypi.org", "files.pythonhosted.org", "registry.npmjs.org"]` | Domains the agent's sandboxed Bash may reach (package registries). |
 | `T2P_TEST_COMMAND` | *(empty)* | Overrides auto-detection when set. |
 | `T2P_TEST_TIMEOUT_S` | `900` | Test run limit, in seconds. |

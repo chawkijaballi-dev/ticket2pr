@@ -42,9 +42,12 @@ def create_app(
     if not secret:
         raise ConfigurationError("serve needs T2P_JIRA_WEBHOOK_SECRET to authenticate webhooks")
 
+    # Built eagerly so a configuration error stops `serve` with a clear message, before the
+    # server starts listening.
+    runtime = runtime_factory(settings)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        runtime = runtime_factory(settings)
         interrupted = runtime.store.fail_interrupted()
         if interrupted:
             logger.warning("marked %d interrupted job(s) as failed", interrupted)
@@ -78,9 +81,7 @@ def create_app(
         request: Request,
         x_hub_signature: Annotated[str | None, Header()] = None,
     ) -> JSONResponse:
-        body = await request.body()
-        if len(body) > _MAX_BODY_BYTES:
-            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE)
+        body = await read_limited(request, _MAX_BODY_BYTES)
         if not verify_signature(secret, body, x_hub_signature):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid signature")
         try:
@@ -121,6 +122,21 @@ def create_app(
         return job
 
     return app
+
+
+async def read_limited(request: Request, limit: int) -> bytes:
+    """Read the body, refusing it as soon as it exceeds ``limit`` (before buffering it all)."""
+    declared = request.headers.get("content-length")
+    if declared is not None and (not declared.isdigit() or int(declared) > limit):
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE)
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE)
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def verify_signature(secret: bytes, body: bytes, header: str | None) -> bool:

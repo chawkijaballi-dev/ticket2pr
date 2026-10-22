@@ -1,13 +1,16 @@
-"""Async git wrapper for one job workspace.
+"""Async git wrapper.
 
-Security model: the agent has write access to the working tree, so anything under
-``.git/`` must be treated as hostile by the time we commit and push. We therefore
+Security model: the agent can write anywhere in its workspace, including ``.git/`` (config,
+hooks, ``commondir``, alternates, attributes) and, outside a sandbox, ``~/.gitconfig``.
+ticket2pr therefore never runs git in the agent's workspace after the agent has started.
+Commits and pushes happen in a *publish clone* made after the agent stopped
+(``GitRepo.clone`` + ``sync_tree``), and every git command ticket2pr runs:
 
-* pass credentials through ``GIT_CONFIG_*`` environment variables, never argv or
-  ``.git/config`` (argv is visible to every process; ``.git/config`` to the agent);
-* restore ``.git/config`` from a snapshot taken right after cloning, so the agent cannot
-  plant ``url.*.insteadOf`` rewrites or credential helpers that would exfiltrate the token;
-* disable hooks (``core.hooksPath=/dev/null``) for every command we run after the agent.
+* ignores system and global configuration (``GIT_CONFIG_NOSYSTEM``, ``GIT_CONFIG_GLOBAL``),
+* disables hooks, fsmonitor and external attribute files, and only allows https/file
+  transports,
+* receives credentials through ``GIT_CONFIG_*`` environment variables, never argv
+  (visible to every process) or a config file.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import os
+import shutil
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,7 +26,16 @@ from pathlib import Path
 from ticket2pr.domain import ChangeSet
 from ticket2pr.errors import SCMError
 
-_SAFE_CONFIG = ("-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false")
+_SAFE_CONFIG = (
+    "-c", "core.hooksPath=/dev/null",
+    "-c", "core.fsmonitor=false",
+    "-c", "core.attributesFile=/dev/null",
+    "-c", "core.quotePath=false",
+    "-c", "commit.gpgsign=false",
+    "-c", "protocol.allow=never",
+    "-c", "protocol.https.allow=always",
+    "-c", "protocol.file.allow=always",
+)  # fmt: skip
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +57,6 @@ class GitAuth:
 class GitRepo:
     def __init__(self, path: Path) -> None:
         self.path = path
-        self._config_snapshot: bytes | None = None
 
     @classmethod
     async def clone(
@@ -58,6 +70,7 @@ class GitRepo:
                 "--quiet",
                 f"--depth={depth}",
                 "--single-branch",
+                "--no-tags",
                 f"--branch={branch}",
                 "--",
                 url,
@@ -65,21 +78,13 @@ class GitRepo:
             ],
             env=auth.env() if auth else None,
         )
-        repo = cls(dest)
-        repo.snapshot_config()
-        return repo
+        return cls(dest)
 
-    def snapshot_config(self) -> None:
-        self._config_snapshot = (self.path / ".git" / "config").read_bytes()
+    async def head(self) -> str:
+        return (await self._run("rev-parse", "HEAD")).strip()
 
-    def restore_config(self) -> None:
-        """Undo any change made to ``.git/config`` since the snapshot."""
-        if self._config_snapshot is None:
-            raise SCMError("restore_config() called before snapshot_config()")
-        (self.path / ".git" / "config").write_bytes(self._config_snapshot)
-
-    async def checkout_new_branch(self, name: str) -> None:
-        await self._run("checkout", "--quiet", "-B", name)
+    async def checkout_new_branch(self, name: str, start: str = "HEAD") -> None:
+        await self._run("checkout", "--quiet", "-B", name, start)
 
     async def stage_all(self) -> ChangeSet:
         """Stage every change in the working tree and describe the staged diff."""
@@ -87,16 +92,25 @@ class GitRepo:
         return await self.staged_changes()
 
     async def staged_changes(self) -> ChangeSet:
-        numstat = await self._run("diff", "--cached", "--numstat", "--no-renames")
+        # -z: paths are NUL-terminated and never quoted or escaped, whatever they contain.
+        numstat = await self._run("diff", "--cached", "--numstat", "--no-renames", "-z")
         files: list[str] = []
         insertions = deletions = 0
-        for line in numstat.splitlines():
-            added, removed, name = line.split("\t", 2)
+        for record in numstat.split("\0"):
+            if not record:
+                continue
+            added, removed, name = record.split("\t", 2)
             files.append(name)
             # Binary files report "-" for both counts.
             insertions += int(added) if added.isdigit() else 0
             deletions += int(removed) if removed.isdigit() else 0
         return ChangeSet(files=tuple(files), insertions=insertions, deletions=deletions)
+
+    async def staged_diff(self) -> bytes:
+        """The staged change as raw bytes, binary files included (``--text``), for scanning."""
+        return await _git_bytes(
+            self.path, "diff", ["--cached", "--text", "--no-color", "--no-ext-diff"]
+        )
 
     def exclude(self, *patterns: str) -> None:
         """Keep harness artefacts out of ``git add`` without touching tracked files."""
@@ -117,11 +131,10 @@ class GitRepo:
             "GIT_COMMITTER_EMAIL": author_email,
         }
         await self._run("commit", "--quiet", "--no-verify", "-m", message, env=identity)
-        return (await self._run("rev-parse", "HEAD")).strip()
+        return await self.head()
 
     async def push(self, url: str, branch: str, *, auth: GitAuth | None = None) -> None:
-        # Push to an explicit URL (not a remote name the agent could have repointed), and
-        # force: the branch belongs to ticket2pr and a re-run replaces the previous attempt.
+        # Force: the branch belongs to ticket2pr and a re-run replaces the previous attempt.
         await self._run(
             "push",
             "--quiet",
@@ -133,31 +146,57 @@ class GitRepo:
         )
 
     async def _run(self, command: str, *args: str, env: dict[str, str] | None = None) -> str:
-        return await _git(self.path, command, list(args), config=_SAFE_CONFIG, env=env)
+        return await _git(self.path, command, list(args), env=env)
+
+
+def sync_tree(source: Path, dest: Path) -> None:
+    """Make ``dest``'s working tree (not its ``.git``) an exact copy of ``source``'s.
+
+    Symlinks are copied as links, never followed, and any ``.git`` entry at any depth is
+    skipped, so nothing from the agent's git metadata reaches the publish clone.
+    """
+    for entry in dest.iterdir():
+        if entry.name == ".git":
+            continue
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+    shutil.copytree(
+        source,
+        dest,
+        symlinks=True,
+        dirs_exist_ok=True,
+        ignore=lambda _dir, names: [name for name in names if name == ".git"],
+    )
 
 
 async def _git(
-    cwd: Path,
-    command: str,
-    args: list[str],
-    *,
-    config: tuple[str, ...] = (),
-    env: dict[str, str] | None = None,
+    cwd: Path, command: str, args: list[str], *, env: dict[str, str] | None = None
 ) -> str:
+    return (await _git_bytes(cwd, command, args, env=env)).decode("utf-8", "replace")
+
+
+async def _git_bytes(
+    cwd: Path, command: str, args: list[str], *, env: dict[str, str] | None = None
+) -> bytes:
     full_env = {
         **os.environ,
         "GIT_TERMINAL_PROMPT": "0",
         "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_ATTR_NOSYSTEM": "1",
         "LC_ALL": "C",
         **(env or {}),
     }
     process = await asyncio.create_subprocess_exec(
         "git",
-        *config,
+        *_SAFE_CONFIG,
         command,
         *args,
         cwd=cwd,
         env=full_env,
+        stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -171,5 +210,6 @@ async def _git(
         raise
     if process.returncode != 0:
         # Never echo argv (it holds URLs); git's stderr does not contain the auth header.
-        raise SCMError(f"git {command} failed ({process.returncode}): {stderr.decode().strip()}")
-    return stdout.decode()
+        message = stderr.decode("utf-8", "replace").strip()
+        raise SCMError(f"git {command} failed ({process.returncode}): {message}")
+    return stdout

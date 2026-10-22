@@ -19,7 +19,6 @@ SECRET_ENV_VARS: tuple[str, ...] = (
     "T2P_JIRA_WEBHOOK_SECRET",
     "T2P_GITHUB_TOKEN",
     "T2P_API_TOKEN",
-    "ANTHROPIC_ADMIN_KEY",
     "GITHUB_TOKEN",
     "GH_TOKEN",
 )
@@ -81,10 +80,21 @@ class Settings(BaseSettings):
     agent_timeout_s: int = Field(
         default=1800, gt=0, description="Wall-clock limit per agent attempt, in seconds."
     )
-    bash_sandbox: bool = Field(
+    sandbox: bool = Field(
         default=True,
-        description="OS-level sandbox for the agent's Bash (bubblewrap on Linux, Seatbelt on "
-        "macOS). Disable only when the worker itself runs in an isolated container.",
+        description="Run the agent's Bash and the repository's tests in a bubblewrap sandbox "
+        "(Linux; needs bwrap and socat). Jobs fail when it cannot start. Disable only when the "
+        "worker itself runs in an isolated, egress-restricted container.",
+    )
+    test_network: bool = Field(
+        default=False,
+        description="Give the sandboxed test run network access (e.g. when the test command "
+        "installs dependencies, like `uv run pytest`).",
+    )
+    sandbox_readonly_paths: list[Path] = Field(
+        default_factory=list,
+        description="Extra toolchain directories under $HOME or the working directory that "
+        "the test sandbox must still see (read-only).",
     )
     network_allowlist: list[str] = Field(
         default_factory=lambda: ["pypi.org", "files.pythonhosted.org", "registry.npmjs.org"],

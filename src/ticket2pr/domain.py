@@ -53,10 +53,19 @@ class Usage(_Frozen):
     cost_usd: float = 0.0
     turns: int = 0
     duration_s: float = 0.0
+    cost_capped: bool = False  # the exact cost is unknown; ``cost_usd`` is the budget cap
 
     def __add__(self, other: Usage) -> Usage:
-        fields = type(self).model_fields
-        return Usage(**{name: getattr(self, name) + getattr(other, name) for name in fields})
+        summed = {
+            name: getattr(self, name) + getattr(other, name)
+            for name in type(self).model_fields
+            if name != "cost_capped"
+        }
+        return Usage(**summed, cost_capped=self.cost_capped or other.cost_capped)
+
+    @property
+    def cost_label(self) -> str:
+        return f"≤ ${self.cost_usd:.2f}" if self.cost_capped else f"${self.cost_usd:.2f}"
 
     @property
     def total_tokens(self) -> int:

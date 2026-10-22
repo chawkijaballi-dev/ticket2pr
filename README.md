@@ -2,7 +2,6 @@
 
 **Turn Jira tickets into review-ready GitHub pull requests with a budget-capped, sandboxed Claude agent.**
 
-[![CI](https://github.com/OWNER/ticket2pr/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/ticket2pr/actions/workflows/ci.yml)
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
 ![mypy: strict](https://img.shields.io/badge/mypy-strict-blue)
 ![coverage ≥ 90%](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen)
@@ -27,9 +26,9 @@ trustworthy, and what reviewers see.
 | Concern | What ticket2pr does |
 |---|---|
 | **Cost** | Hard per-ticket budget (`max_budget_usd`) enforced by the SDK and shared across retries; tokens and dollars are reported on the PR, on the ticket and in the job history. |
-| **Correctness** | Runs the repository's tests after the agent; a failing run gets one retry with the failure output; still red means a **draft** PR, never a green one. |
-| **Isolation** | Fresh clone per job, Bash in an OS sandbox with a network allowlist, a `PreToolUse` guard (paths, `git push`, env dumps), no repository settings or hooks loaded, secrets blanked from the agent's environment. |
-| **Supply chain** | The harness, not the agent, commits and pushes, with hooks disabled, `.git/config` restored from a snapshot and credentials passed outside argv and `.git/config`. Protected paths (CI, `.env`, keys) are never committed. |
+| **Correctness** | Runs the repository's tests after the agent; a failing run gets one retry with the failure output; still red means a **draft** PR (kept in sync on re-runs), never a green one. |
+| **Isolation** | Fresh clone per job; the agent's Bash *and* the repository's tests run in a bubblewrap sandbox (fresh PID namespace, no access to the service's home or secrets, network allowlist / off), which **fails closed** if it cannot start; a `PreToolUse` guard; no repository settings or hooks loaded; credentials scrubbed from every environment the agent or the tests can see. |
+| **Supply chain** | The agent never touches what gets pushed: its tree is copied into a fresh *publish clone* (no `.git` from the agent), committed and pushed there with global config, hooks and fsmonitor disabled. Protected paths (CI, `.env`, keys) are never committed, and a change containing a configured secret is refused. |
 | **Measurability** | A SWE-bench-style eval suite with hidden tests reports resolve rate and **cost per resolved ticket**. |
 
 ## How it works
@@ -47,13 +46,14 @@ sequenceDiagram
     API->>Jira: fetch ticket (REST v3)
     API->>Repo: clone base branch, create ticket2pr/<key>-<slug>
     API->>Agent: ticket + repo guidelines + test command + budget
-    Agent->>Repo: read / edit / run tests (guarded tools)
-    API->>Repo: run tests (no secrets in env, timeout)
+    Agent->>Repo: read / edit / run tests (guarded tools, sandboxed Bash)
+    API->>Repo: run tests in the sandbox (no secrets, timeout)
     alt tests red and budget left
         API->>Agent: retry with failing output
     end
-    API->>Repo: restore .git/config, drop protected paths, commit
-    API->>GH: push branch, open PR (draft if not green)
+    API->>API: fresh publish clone ← workspace tree (never its .git)
+    API->>API: drop protected paths, refuse secrets, commit
+    API->>GH: push branch, open or update PR (draft if not green)
     API->>Jira: comment with PR link, test status, cost
 ```
 
@@ -65,7 +65,8 @@ Code map (`src/ticket2pr/`):
 | `agent/` | `CodingAgent` protocol, Claude Agent SDK runner, prompts, tool-call guard |
 | `trackers/` | `Tracker` protocol; Jira Cloud (with ADF conversion) and local YAML files |
 | `scm/` | Hardened async git wrapper, GitHub REST client, `RepoHost` (GitHub or local) |
-| `verify.py` | Test-command detection and isolated test runs |
+| `verify.py`, `sandbox.py` | Test-command detection; bubblewrap sandbox for tests; process hardening |
+| `redaction.py` | Masks configured secrets in published text, refuses them in commits |
 | `server.py` / `worker.py` | FastAPI webhook + jobs API, asyncio worker pool |
 | `store.py` | SQLite job history with atomic, idempotent claims |
 | `evals.py` | Offline eval harness (oracle and Claude agents) |
@@ -75,10 +76,13 @@ More detail: [architecture](docs/architecture.md) · [security model](docs/secur
 
 ## Quick start
 
-Requirements: Python 3.12+, [uv](https://docs.astral.sh/uv/), git, an Anthropic API key.
+Requirements: Linux, Python 3.12+, [uv](https://docs.astral.sh/uv/), git, an Anthropic API
+key, and the sandbox tools `bubblewrap` + `socat` (`apt install bubblewrap socat`). Inside an
+already isolated container you can set `T2P_SANDBOX=false` instead (see the
+[security model](docs/security.md#deployment-guidance)).
 
 ```bash
-git clone https://github.com/OWNER/ticket2pr && cd ticket2pr
+cd ticket2pr
 make install            # uv sync + pre-commit hooks
 make eval               # offline suite with the oracle agent: free, no credentials
 ```
@@ -144,7 +148,10 @@ exercise the real pipeline end to end, including attacks such as `.git/config` r
 
 - One repository per Jira project; the agent sees a single repo.
 - The test command is detected from common layouts (pytest, npm, go, cargo, make) or set
-  with `T2P_TEST_COMMAND`; repos without tests get draft PRs.
+  with `T2P_TEST_COMMAND`, and runs with the repository's toolchain (not ticket2pr's
+  virtualenv); repos without tests get draft PRs.
+- The sandbox needs Linux with bubblewrap; elsewhere, run the worker in an isolated
+  container with `T2P_SANDBOX=false`.
 - The in-process queue suits a single replica. Several replicas need a shared queue (the
   `JobQueue.submit` seam) and a shared database.
 

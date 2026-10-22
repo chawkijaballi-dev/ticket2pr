@@ -9,28 +9,38 @@ from typer.testing import CliRunner
 
 from conftest import ScriptedAgent, do_nothing
 from ticket2pr import cli
+from ticket2pr.agent.base import AgentTask
 from ticket2pr.config import Settings
 from ticket2pr.errors import ConfigurationError
 from ticket2pr.evals import EvalResult, EvalSummary, EvalTask, discover, run_suite
 
 TASKS = Path(__file__).resolve().parent.parent / "evals" / "tasks"
+TASK_NAMES = ("envflags", "paginate", "retry", "slugify")
 
 
 async def test_oracle_resolves_every_task(settings: Settings) -> None:
     """Every shipped task is solvable, and its hidden tests accept the reference fix."""
     tasks = discover(TASKS)
-    assert {task.name for task in tasks} >= {"paginate", "envflags", "slugify", "retry"}
+    assert tuple(task.name for task in tasks) == TASK_NAMES
     summary = await run_suite(tasks, settings=settings)
     unresolved = [result for result in summary.results if not result.resolved]
     assert unresolved == []
     assert summary.resolve_rate == 1.0
 
 
+def touch_readme(task: AgentTask) -> None:
+    """An irrelevant change: enough for a PR to open, so the hidden tests really run."""
+    (task.workspace / "README.md").write_text("Nothing to see.\n")
+
+
 async def test_hidden_tests_reject_the_unfixed_repo(settings: Settings) -> None:
-    """A no-op agent must never count as a resolution, or the eval is meaningless."""
-    summary = await run_suite(discover(TASKS), settings=settings, agent=ScriptedAgent([do_nothing]))
-    assert [result.resolved for result in summary.results] == [False] * len(summary.results)
-    assert {result.status for result in summary.results} == {"failed"}
+    """Hidden tests must fail on the unfixed code, or the eval measures nothing."""
+    summary = await run_suite(
+        discover(TASKS), settings=settings, agent=ScriptedAgent([touch_readme])
+    )
+    # A PR was opened for every task, so the hidden tests did run against the unfixed code.
+    assert "failed" not in {result.status for result in summary.results}
+    assert [result.resolved for result in summary.results] == [False] * len(TASK_NAMES)
     assert summary.cost_per_resolved_usd is None
 
 

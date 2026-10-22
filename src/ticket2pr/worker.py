@@ -44,7 +44,7 @@ class JobQueue:
         """Persist and enqueue a job. ``None`` when the ticket already has one in flight."""
         job = self._store.claim(ticket_key, repo)
         if job is not None:
-            self._queue.put_nowait((job, RunOptions(repo=repo)))
+            self._queue.put_nowait((job, RunOptions()))
         return job
 
     async def join(self) -> None:

@@ -153,6 +153,17 @@ def test_webhook_rejects_bad_signature_and_body(client: TestClient) -> None:
     response = client.post("/webhooks/jira", content=huge, headers={"X-Hub-Signature": _sign(huge)})
     assert response.status_code == 413
 
+    def chunks() -> Iterator[bytes]:  # no Content-Length: the limit applies while streaming
+        for _ in range(20):
+            yield b"x" * 100_000
+
+    response = client.post("/webhooks/jira", content=chunks(), headers={"X-Hub-Signature": "x"})
+    assert response.status_code == 413
+    response = client.post(
+        "/webhooks/jira", content=b"{}", headers={"Content-Length": "abc", "X-Hub-Signature": "x"}
+    )
+    assert response.status_code in {400, 413}
+
 
 def test_webhook_ignores_irrelevant_events(client: TestClient) -> None:
     response = _post(client, _event(event="jira:issue_deleted"))
@@ -344,8 +355,26 @@ def test_cli_serve_without_secret_exits(monkeypatch: pytest.MonkeyPatch) -> None
     assert "T2P_JIRA_WEBHOOK_SECRET" in result.output
 
 
+PRODUCTION_ENV = {
+    "T2P_JIRA_WEBHOOK_SECRET": "s",
+    "T2P_JIRA_BASE_URL": "https://a.atlassian.net",
+    "T2P_JIRA_EMAIL": "a@b.c",
+    "T2P_JIRA_API_TOKEN": "t",
+    "T2P_GITHUB_TOKEN": "g",
+}
+
+
+def test_cli_serve_reports_config_errors_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("T2P_JIRA_WEBHOOK_SECRET", "s")  # but no Jira / GitHub credentials
+    result = runner.invoke(cli.app, ["serve"])
+    assert result.exit_code == 2
+    assert "Jira needs" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_cli_serve_starts_uvicorn(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("T2P_JIRA_WEBHOOK_SECRET", "s")
+    for name, value in PRODUCTION_ENV.items():
+        monkeypatch.setenv(name, value)
     calls: list[tuple[str, int]] = []
     monkeypatch.setattr(
         "uvicorn.run", lambda app, host, port, log_config: calls.append((host, port))

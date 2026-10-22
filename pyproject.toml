@@ -34,11 +34,6 @@ dependencies = [
 [project.scripts]
 ticket2pr = "ticket2pr.cli:app"
 
-[project.urls]
-Documentation = "https://github.com/OWNER/ticket2pr#readme"
-Source = "https://github.com/OWNER/ticket2pr"
-Issues = "https://github.com/OWNER/ticket2pr/issues"
-
 [build-system]
 requires = ["uv_build>=0.13.5,<0.14.0"]
 build-backend = "uv_build"
@@ -96,7 +91,6 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --strict-config"
-markers = ["live: hits real Claude / Jira / GitHub APIs (opt-in, needs credentials)"]
 filterwarnings = ["error"]
 
 [tool.coverage.run]

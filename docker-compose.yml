@@ -8,7 +8,7 @@ services:
     environment:
       # bubblewrap cannot create namespaces in an unprivileged container: the container is the
       # sandbox here. Restrict its egress at the network layer (see docs/security.md).
-      T2P_BASH_SANDBOX: "false"
+      T2P_SANDBOX: "false"
     ports:
       - "127.0.0.1:8080:8080"
     volumes:

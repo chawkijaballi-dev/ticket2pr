@@ -11,6 +11,7 @@ import respx
 from conftest import REPO, git
 from ticket2pr.errors import ConfigurationError, SCMError
 from ticket2pr.scm import GitAuth, GitHubClient, GitHubHost, GitRepo, LocalHost, RepoHost
+from ticket2pr.scm.git import sync_tree
 
 API = "https://api.github.com"
 
@@ -49,16 +50,63 @@ async def test_clone_failure_raises_scm_error(tmp_path: Path) -> None:
         await GitRepo.clone((tmp_path / "nope").as_uri(), tmp_path / "ws", branch="main")
 
 
-async def test_restore_config_requires_snapshot(tmp_path: Path) -> None:
-    with pytest.raises(SCMError):
-        GitRepo(tmp_path).restore_config()
-
-
-async def test_restore_config_reverts_tampering(repos_dir: Path, tmp_path: Path) -> None:
+async def test_non_ascii_paths_are_reported_verbatim(repos_dir: Path, tmp_path: Path) -> None:
     repo = await GitRepo.clone((repos_dir / REPO).as_uri(), tmp_path / "ws", branch="main")
-    git(repo.path, "config", "credential.helper", "!evil")
-    repo.restore_config()
-    assert "evil" not in (repo.path / ".git" / "config").read_text()
+    (repo.path / "clé été.txt").write_text("x\n")
+    (repo.path / "tab\tname.txt").write_text("y\n")
+    changes = await repo.stage_all()
+    assert sorted(changes.files) == ["clé été.txt", "tab\tname.txt"]
+    await repo.unstage(["clé été.txt"])
+    assert (await repo.staged_changes()).files == ("tab\tname.txt",)
+
+
+async def test_staged_diff_includes_binary_content(repos_dir: Path, tmp_path: Path) -> None:
+    repo = await GitRepo.clone((repos_dir / REPO).as_uri(), tmp_path / "ws", branch="main")
+    (repo.path / "blob.bin").write_bytes(b"\x00\x01needle\x02")
+    await repo.stage_all()
+    assert b"needle" in await repo.staged_diff()
+
+
+async def test_global_config_is_ignored(
+    repos_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    (hooks / "pre-commit").write_text(f"#!/bin/sh\ntouch {tmp_path}/ran\n")
+    (hooks / "pre-commit").chmod(0o755)
+    poisoned = tmp_path / "poisoned.gitconfig"
+    poisoned.write_text(f"[core]\n\thooksPath = {hooks}\n\tfsmonitor = touch {tmp_path}/ran\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(poisoned))
+    repo = await GitRepo.clone((repos_dir / REPO).as_uri(), tmp_path / "ws", branch="main")
+    (repo.path / "x.txt").write_text("x")
+    await repo.stage_all()
+    await repo.commit("m", author_name="a", author_email="a@b.c")
+    assert not (tmp_path / "ran").exists()
+
+
+def test_sync_tree_mirrors_the_tree_but_never_git_metadata(tmp_path: Path) -> None:
+    source, dest = tmp_path / "src", tmp_path / "dest"
+    (source / ".git").mkdir(parents=True)
+    (source / ".git" / "config").write_text("evil")
+    (source / "pkg" / ".git").mkdir(parents=True)  # nested repo metadata
+    (source / "pkg" / "mod.py").write_text("new")
+    (source / "link").symlink_to("/etc/passwd")
+    (dest / ".git").mkdir(parents=True)
+    (dest / ".git" / "config").write_text("pristine")
+    (dest / "deleted.py").write_text("old")
+    (dest / "olddir").mkdir()
+    (dest / "olddir" / "f").write_text("old")
+    (dest / "oldlink").symlink_to("/etc/hosts")
+
+    sync_tree(source, dest)
+
+    assert (dest / ".git" / "config").read_text() == "pristine"
+    assert (dest / "pkg" / "mod.py").read_text() == "new"
+    assert not (dest / "pkg" / ".git").exists()
+    assert (dest / "link").is_symlink()
+    assert not (dest / "deleted.py").exists()
+    assert not (dest / "olddir").exists()
+    assert not (dest / "oldlink").exists()
 
 
 async def test_exclude_keeps_files_out_of_staging(repos_dir: Path, tmp_path: Path) -> None:
@@ -88,9 +136,11 @@ async def test_github_creates_pr_when_none_is_open() -> None:
 
 @respx.mock
 async def test_github_updates_open_pr() -> None:
-    lookup = respx.get(f"{API}/repos/acme/api/pulls").respond(json=[{"number": 5}])
+    lookup = respx.get(f"{API}/repos/acme/api/pulls").respond(
+        json=[{"number": 5, "node_id": "PR_5"}]
+    )
     patch = respx.patch(f"{API}/repos/acme/api/pulls/5").respond(
-        json={"number": 5, "html_url": "https://github.com/acme/api/pull/5"}
+        json={"number": 5, "html_url": "https://github.com/acme/api/pull/5", "draft": False}
     )
     pr = await GitHubClient(token="t").open_or_update_pr(
         "acme/api", head="b", base="main", title="T", body="B", draft=False
@@ -118,6 +168,55 @@ def test_clone_url_for_github_and_enterprise() -> None:
     assert GitHubClient(token="t").clone_url("a/b") == "https://github.com/a/b.git"
     ghes = GitHubClient(token="t", api_url="https://git.acme.test/api/v3/")
     assert ghes.clone_url("a/b") == "https://git.acme.test/a/b.git"
+
+
+@pytest.mark.parametrize(
+    ("was_draft", "want_draft", "mutation"),
+    [(True, False, "markPullRequestReadyForReview"), (False, True, "convertPullRequestToDraft")],
+)
+@respx.mock
+async def test_github_syncs_draft_state_on_update(
+    was_draft: bool, want_draft: bool, mutation: str
+) -> None:
+    respx.get(f"{API}/repos/acme/api/pulls").respond(json=[{"number": 5, "node_id": "PR_5"}])
+    respx.patch(f"{API}/repos/acme/api/pulls/5").respond(
+        json={"number": 5, "html_url": "https://github.com/acme/api/pull/5", "draft": was_draft}
+    )
+    graphql = respx.post(f"{API}/graphql").respond(json={"data": {}})
+    pr = await GitHubClient(token="t").open_or_update_pr(
+        "acme/api", head="b", base="main", title="T", body="B", draft=want_draft
+    )
+    assert pr.draft is want_draft
+    sent = json.loads(graphql.calls.last.request.content)
+    assert mutation in sent["query"]
+    assert sent["variables"] == {"id": "PR_5"}
+
+
+@respx.mock
+async def test_github_reports_the_real_state_when_draft_change_fails() -> None:
+    respx.get(f"{API}/repos/acme/api/pulls").respond(json=[{"number": 5, "node_id": "PR_5"}])
+    respx.patch(f"{API}/repos/acme/api/pulls/5").respond(
+        json={"number": 5, "html_url": "https://github.com/acme/api/pull/5", "draft": False}
+    )
+    respx.post(f"{API}/graphql").respond(json={"errors": [{"message": "Draft PRs unavailable"}]})
+    pr = await GitHubClient(token="t").open_or_update_pr(
+        "acme/api", head="b", base="main", title="T", body="B", draft=True
+    )
+    assert pr.draft is False
+
+
+@respx.mock
+async def test_github_enterprise_graphql_endpoint() -> None:
+    api = "https://git.acme.test/api/v3"
+    respx.get(f"{api}/repos/acme/api/pulls").respond(json=[{"number": 5, "node_id": "PR_5"}])
+    respx.patch(f"{api}/repos/acme/api/pulls/5").respond(
+        json={"number": 5, "html_url": "https://git.acme.test/acme/api/pull/5", "draft": True}
+    )
+    graphql = respx.post("https://git.acme.test/api/graphql").respond(json={"data": {}})
+    await GitHubClient(token="t", api_url=api).open_or_update_pr(
+        "acme/api", head="b", base="main", title="T", body="B", draft=False
+    )
+    assert graphql.called
 
 
 def test_github_requires_token() -> None:

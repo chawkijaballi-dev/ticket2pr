@@ -45,7 +45,7 @@ def build_agent(settings: Settings) -> CodingAgent:
         timeout_s=settings.agent_timeout_s,
         protected_globs=tuple(settings.protected_paths),
         network_allowlist=tuple(settings.network_allowlist),
-        bash_sandbox=settings.bash_sandbox,
+        sandbox=settings.sandbox,
     )
 
 

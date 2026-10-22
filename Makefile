@@ -28,7 +28,7 @@ cov: ## Run tests with coverage (fails under 90%)
 eval: ## Run the offline eval suite with the oracle agent (free)
 	uv run ticket2pr eval --agent oracle
 
-check: lint typecheck cov ## Everything CI runs
+check: lint typecheck cov ## Lint, types and tests (CI also runs the eval and the image build)
 
 docker: ## Build the worker image
 	docker build -t ticket2pr:dev .

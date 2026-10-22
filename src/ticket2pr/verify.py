@@ -1,7 +1,8 @@
 """Detect and run a repository's test suite.
 
-The tests execute code the agent just wrote, so they run with a minimal environment (no
-credentials), in their own process group, and are killed with the whole group on timeout.
+The tests execute code the agent just wrote. They run in the bubblewrap sandbox described in
+``ticket2pr.sandbox``, with a minimal environment (no credentials), in their own process
+group, and are killed with the whole group on timeout.
 """
 
 from __future__ import annotations
@@ -10,11 +11,13 @@ import asyncio
 import json
 import os
 import signal
+import sys
 import time
 from contextlib import suppress
 from pathlib import Path
 
 from ticket2pr.domain import TestReport
+from ticket2pr.sandbox import TestSandbox
 
 _TAIL_CHARS = 8_000
 _ENV_PASSTHROUGH = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "VIRTUAL_ENV", "UV_CACHE_DIR")
@@ -50,20 +53,29 @@ def _has_python_tests(workspace: Path) -> bool:
     return any(workspace.glob("test_*.py")) or any(workspace.glob("*_test.py"))
 
 
-async def run_tests(command: str | None, workspace: Path, *, timeout_s: float) -> TestReport:
+async def run_tests(
+    command: str | None,
+    workspace: Path,
+    *,
+    timeout_s: float,
+    sandbox: TestSandbox | None,
+) -> TestReport:
+    """Run ``command`` in ``workspace``; inside ``sandbox`` unless it is explicitly ``None``."""
     if command is None:
         return TestReport(command=None, passed=False, output_tail="No test command detected.")
 
     env = {key: os.environ[key] for key in _ENV_PASSTHROUGH if key in os.environ}
+    env["PATH"] = _without_worker_venv(env.get("PATH", os.defpath))
     env["CI"] = "true"
     # No bytecode caches: they would end up in the commit, and a stale .pyc (same size, same
     # mtime second) can make a retry test the previous attempt's code.
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    argv = ["/bin/sh", "-c", command]
+    if sandbox is not None:
+        argv = sandbox.wrap(argv, workspace)
     started = time.monotonic()
     process = await asyncio.create_subprocess_exec(
-        "/bin/sh",
-        "-c",
-        command,
+        *argv,
         cwd=workspace,
         env=env,
         stdin=asyncio.subprocess.DEVNULL,
@@ -96,6 +108,14 @@ async def run_tests(command: str | None, workspace: Path, *, timeout_s: float) -
         output_tail=text[-_TAIL_CHARS:],
         duration_s=time.monotonic() - started,
     )
+
+
+def _without_worker_venv(path: str) -> str:
+    """Drop ticket2pr's own virtualenv from PATH: the repository brings its own toolchain."""
+    if sys.prefix == sys.base_prefix:  # not running from a virtualenv
+        return path
+    venv_bin = str(Path(sys.prefix) / "bin")
+    return os.pathsep.join(entry for entry in path.split(os.pathsep) if entry != venv_bin)
 
 
 def _kill_group(pid: int) -> None:
