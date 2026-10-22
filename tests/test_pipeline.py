@@ -548,4 +548,54 @@ async def test_unsandboxed_jobs_reap_leftover_processes(
     monkeypatch.setattr("ticket2pr.pipeline.kill_descendants", fake_kill)
     job = await make_pipeline(ScriptedAgent([fix_add])).run(claim(store, "CALC-1"))
     assert job.status is JobStatus.SUCCEEDED
-    assert calls == ["x"]
+    assert calls == ["x", "x", "x"]  # before cloning, before publishing, at the end
+
+
+async def test_cancel_during_the_comment_keeps_the_recorded_outcome(
+    make_pipeline: MakePipeline, store: JobStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commenting = asyncio.Event()
+
+    async def slow_comment(self: LocalTracker, key: str, markdown: str) -> None:
+        commenting.set()
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(LocalTracker, "comment", slow_comment)
+    job = claim(store, "CALC-1")
+    running = asyncio.create_task(make_pipeline(ScriptedAgent([fix_add])).run(job))
+    await commenting.wait()
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    assert job.id is not None
+    stored = store.get(job.id)
+    assert stored is not None
+    assert stored.status is JobStatus.SUCCEEDED
+    assert stored.pr_url is not None
+
+
+async def test_comment_errors_never_change_the_outcome(
+    make_pipeline: MakePipeline, store: JobStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def broken_comment(self: LocalTracker, key: str, markdown: str) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(LocalTracker, "comment", broken_comment)
+    job = await make_pipeline(ScriptedAgent([fix_add])).run(claim(store, "CALC-1"))
+    assert job.status is JobStatus.SUCCEEDED
+
+
+async def test_unsandboxed_jobs_reap_on_failure_and_before_cloning(
+    make_pipeline: MakePipeline, store: JobStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    def fake_kill() -> int:
+        calls.append("reap")
+        return 0
+
+    monkeypatch.setattr("ticket2pr.pipeline.kill_descendants", fake_kill)
+    agent = ScriptedAgent([fix_add], outcome=AgentOutcome.BUDGET_EXCEEDED)
+    job = await make_pipeline(agent).run(claim(store, "CALC-1"))
+    assert job.status is JobStatus.FAILED
+    assert calls == ["reap", "reap"]  # before the first clone, and when the job ended

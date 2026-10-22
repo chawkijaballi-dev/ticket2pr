@@ -129,6 +129,9 @@ def start_queue(runtime: Runtime, *, workers: int) -> JobQueue:
     queue = JobQueue(pipeline=runtime.pipeline, store=runtime.store, workers=workers)
     pending = runtime.store.list(limit=10_000, status=JobStatus.QUEUED)
     for job in reversed(pending):  # oldest first
+        # The database may have been written by untrusted code (unsandboxed mode): never take
+        # a repository from it, re-resolve it from T2P_REPOS when the job runs.
+        job.repo = None
         queue.enqueue(job)
     if pending:
         logger.info("re-enqueued %d queued job(s)", len(pending))

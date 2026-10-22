@@ -98,7 +98,6 @@ class Pipeline:
             # Shutdown or Ctrl-C: leave a terminal status so the ticket is not blocked forever.
             job.status = JobStatus.FAILED
             job.error = "interrupted before completion"
-            self._store.save(job)
             raise
         except Ticket2PRError as exc:
             job.status = JobStatus.FAILED
@@ -109,12 +108,15 @@ class Pipeline:
             job.error = self._redactor.redact(f"internal error: {type(exc).__name__}: {exc}")
             logger.exception("job %s (%s) crashed", job.id, job.ticket_key)
         finally:
+            # Record the outcome first: nothing below may lose it (cancellation, I/O errors).
+            self._store.save(job)
+            await self._reap_untrusted_processes()
             if job_dir is not None and not options.keep_workspace:
                 await asyncio.to_thread(shutil.rmtree, job_dir, ignore_errors=True)
 
         if job.status is not JobStatus.SKIPPED:
             await self._report(job, outcome)
-        return self._store.save(job)
+        return job
 
     def _resolve_repo(self, job: Job, ticket: Ticket) -> str:
         repo = job.repo or self._settings.repo_for(ticket.key)
@@ -129,6 +131,8 @@ class Pipeline:
         settings = self._settings
         clone_url = self._host.clone_url(job.repo)
         auth = self._host.git_auth()
+        # A process left by an earlier unsandboxed job must not watch this job's token.
+        await self._reap_untrusted_processes()
         await asyncio.to_thread(shutil.rmtree, job_dir, ignore_errors=True)  # stale attempt
 
         work = await GitRepo.clone(
@@ -302,5 +306,5 @@ class Pipeline:
         )
         try:
             await self._tracker.comment(job.ticket_key, self._redactor.redact(comment))
-        except Ticket2PRError as exc:
-            logger.warning("could not comment on %s: %s", job.ticket_key, exc)
+        except Exception:  # the job's outcome is already recorded; a comment is best effort
+            logger.warning("could not comment on %s", job.ticket_key, exc_info=True)

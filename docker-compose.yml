@@ -17,6 +17,10 @@ services:
     tmpfs:
       - /tmp
       - /home/ticket2pr  # Claude Code keeps session state under $HOME
+    # Unsandboxed tests run in this container: bound what a runaway suite can take.
+    pids_limit: 512
+    mem_limit: 4g
+    cpus: 2
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true

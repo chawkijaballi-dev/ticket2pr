@@ -411,3 +411,22 @@ def test_cli_serve_starts_uvicorn(monkeypatch: pytest.MonkeyPatch) -> None:
     result = runner.invoke(cli.app, ["serve", "--port", "9999"])
     assert result.exit_code == 0, result.output
     assert calls == [("127.0.0.1", 9999)]
+
+
+def test_resumed_jobs_never_trust_the_repo_stored_in_the_database(
+    service_settings: Settings, tickets_dir: Path, repos_dir: Path
+) -> None:
+    def factory(settings: Settings) -> Runtime:
+        runtime = build_runtime(
+            settings, tickets_dir=tickets_dir, repos_dir=repos_dir, agent=ScriptedAgent([fix_add])
+        )
+        runtime.store.claim("CALC-1", "attacker/elsewhere")  # planted row
+        return runtime
+
+    with TestClient(create_app(service_settings, runtime_factory=factory)) as test_client:
+        queue: JobQueue = test_client.app.state.queue  # type: ignore[attr-defined]
+        test_client.portal.call(queue.join)  # type: ignore[union-attr]
+        runtime: Runtime = test_client.app.state.runtime  # type: ignore[attr-defined]
+        job = runtime.store.list()[0]
+        assert job.repo == "acme/calc"  # from T2P_REPOS, not from the row
+        assert job.status is JobStatus.SUCCEEDED

@@ -26,7 +26,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
     T2P_DATA_DIR=/data
 RUN mkdir /data && chown ticket2pr:ticket2pr /data
 USER ticket2pr
-WORKDIR /data
+# Not /data: untrusted code can write there when the sandbox is off, and the working
+# directory is where a `.env` would be read from on the next start.
+WORKDIR /app
 VOLUME ["/data"]
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s \

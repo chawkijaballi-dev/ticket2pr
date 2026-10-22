@@ -80,6 +80,13 @@ Residual risks:
   - **restrict egress at the network layer** (Kubernetes `NetworkPolicy`, an egress proxy)
     to `api.anthropic.com`, GitHub, Jira and your package registries;
   - use a dedicated, spend-limited Anthropic key and short-lived GitHub tokens;
+  - keep the defaults that keep state out of reach: the working directory (`/app`, where a
+    `.env` would be read) is outside the writable `/data` volume, and jobs re-enqueued after
+    a restart take their repository from `T2P_REPOS`, never from the database. The job
+    history in `/data/jobs.sqlite3` can still be altered by untrusted code in this mode, so
+    treat it as informational;
+  - keep the compose resource limits (`pids_limit`, `mem_limit`, `cpus`): unsandboxed tests
+    share the container's limits until their timeout kills them;
   - or grant the container what bubblewrap needs (user namespaces, e.g. a seccomp profile
     that allows `clone(CLONE_NEWUSER)`) and keep `T2P_SANDBOX=true`.
 - **Review every PR.** ticket2pr opens pull requests; humans merge them. Drafts mean the
