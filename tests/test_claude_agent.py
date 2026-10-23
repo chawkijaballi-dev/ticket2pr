@@ -238,12 +238,19 @@ async def test_unknown_environment_variables_are_blanked(
 ) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgres://u:p@db/x")
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", "/srv/claude")
+    monkeypatch.setenv("DISABLE_TELEMETRY", "1")  # Claude Code's, unprefixed
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
     query = Recorder(_result())
     await _agent(query).run(task)
     env = query.calls[0][1].env
     assert env["DATABASE_URL"] == ""
-    assert "PATH" not in env
-    assert "CLAUDE_CONFIG_DIR" not in env
+    assert env["AWS_REGION"] == ""  # Bedrock is not in use
+    for kept in ("PATH", "CLAUDE_CONFIG_DIR", "DISABLE_TELEMETRY"):
+        assert kept not in env
+
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+    await _agent(query).run(task)
+    assert "AWS_REGION" not in query.calls[1][1].env
 
 
 async def test_options_lock_down_the_agent(task: AgentTask) -> None:

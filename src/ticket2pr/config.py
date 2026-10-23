@@ -52,7 +52,8 @@ class Settings(BaseSettings):
         "both owners (classic `public_repo`/`repo`, or a GitHub App installed on both).",
     )
     github_api_url: str = Field(
-        default="https://api.github.com", description="Change for GitHub Enterprise Server."
+        default="https://api.github.com",
+        description="GitHub Enterprise Server: https://<host>/api/v3 (that exact form).",
     )
     repos: dict[str, str] = Field(
         default_factory=dict,
@@ -201,6 +202,11 @@ CLAUDE_CREDENTIAL_ENV_VARS = (
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
     "CLAUDE_CODE_OAUTH_TOKEN",
+)
+# Egress proxy and CA settings: passed to the agent and to the tests.
+NETWORK_ENV_VARS = (
+    *("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"),
+    *("SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE"),
 )
 # Credentials of other tools that may sit in the worker's environment: blanked for the agent.
 OTHER_CREDENTIAL_ENV_VARS = ("GITHUB_TOKEN", "GH_TOKEN")

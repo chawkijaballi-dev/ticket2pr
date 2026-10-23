@@ -27,22 +27,40 @@ from claude_agent_sdk import (
 from ticket2pr.agent.base import AgentTask
 from ticket2pr.agent.guard import Policy
 from ticket2pr.agent.prompts import SYSTEM_PROMPT, build_prompt
-from ticket2pr.config import Effort, secret_env_names
+from ticket2pr.config import NETWORK_ENV_VARS, Effort, secret_env_names
 from ticket2pr.domain import AgentOutcome, AgentResult, Usage
 from ticket2pr.sandbox import ensure_sandbox_available
 
 logger = logging.getLogger(__name__)
-# The worker's environment reaches the agent's commands: everything else is blanked, so a
-# credential ticket2pr does not know about (DATABASE_URL, AWS_*...) cannot end up in the diff.
+# The worker's environment reaches Claude Code and the agent's commands: everything else is
+# blanked, so a credential ticket2pr does not know about (DATABASE_URL...) cannot end up in
+# the diff. Kept: the basics, and Claude Code's own settings (it reads unprefixed ones too).
 _ENV_KEPT = frozenset(
     {
         *("PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TERM", "TZ", "TMPDIR"),
-        *("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"),
-        *("SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE"),
+        *NETWORK_ENV_VARS,
         *("UV_CACHE_DIR", "RUSTUP_HOME", "CARGO_HOME", "PYENV_ROOT"),
+        *("MAX_THINKING_TOKENS", "MAX_MCP_OUTPUT_TOKENS"),
     }
 )
-_ENV_KEPT_PREFIXES = ("LC_", "CLAUDE_", "ANTHROPIC_")  # Claude Code's own settings
+_ENV_KEPT_PREFIXES = ("LC_", "CLAUDE_", "ANTHROPIC_", "DISABLE_", "BASH_", "OTEL_")
+# A cloud provider's credentials only when Claude Code is set to use that provider.
+_PROVIDER_ENV = {
+    "CLAUDE_CODE_USE_BEDROCK": ("AWS_",),
+    "CLAUDE_CODE_USE_VERTEX": ("CLOUD_ML_", "VERTEX_", "GOOGLE_", "GCLOUD_"),
+}
+
+
+def _blanked_env() -> dict[str, str]:
+    kept = _ENV_KEPT_PREFIXES + tuple(
+        prefix
+        for flag, prefixes in _PROVIDER_ENV.items()
+        if os.environ.get(flag, "") not in ("", "0", "false")
+        for prefix in prefixes
+    )
+    return {name: "" for name in os.environ if name not in _ENV_KEPT and not name.startswith(kept)}
+
+
 # Claude Code's shared temp dirs: /tmp/claude-<uid> since CLI 2.1.309, /tmp/claude before.
 _SHARED_TMP = ["/tmp/claude", f"/tmp/claude-{os.getuid()}"]  # noqa: S108
 # Host IPC sockets (the systemd/D-Bus user bus): `systemd-run --user` would start a process
@@ -218,11 +236,7 @@ class ClaudeAgent:
             # boundary and Claude Code's credentials are reachable anyway (docs/security.md).
             # PYTHONDONTWRITEBYTECODE keeps the agent's own test runs from leaving caches behind.
             env={
-                **{
-                    name: ""
-                    for name in os.environ
-                    if name not in _ENV_KEPT and not name.startswith(_ENV_KEPT_PREFIXES)
-                },
+                **_blanked_env(),
                 **dict.fromkeys(secret_env_names(), ""),
                 **({"ANTHROPIC_API_KEY": self._api_key} if self._api_key else {}),
                 **({"CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"} if self._sandbox else {}),

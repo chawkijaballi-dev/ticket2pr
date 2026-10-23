@@ -18,6 +18,7 @@ import time
 from contextlib import suppress
 from pathlib import Path
 
+from ticket2pr.config import NETWORK_ENV_VARS
 from ticket2pr.domain import TestReport
 from ticket2pr.sandbox import TestSandbox, remove_git_dir
 
@@ -25,7 +26,10 @@ _TAIL_CHARS = 8_000
 _TAIL_BYTES = 4 * _TAIL_CHARS  # UTF-8: at most 4 bytes per character
 _DRAIN_TIMEOUT_S = 5.0
 # Not VIRTUAL_ENV: it would point tools such as `poetry run` at ticket2pr's own virtualenv.
-_ENV_PASSTHROUGH = ("PATH", "HOME", "LANG", "LC_ALL", "UV_CACHE_DIR")
+_ENV_PASSTHROUGH = (
+    *("PATH", "HOME", "LANG", "LC_ALL", "UV_CACHE_DIR"),
+    *NETWORK_ENV_VARS,  # with T2P_TEST_NETWORK, installs use the agent's proxy and CAs
+)
 _TOOLCHAIN_HOMES = {"RUSTUP_HOME": ".rustup", "CARGO_HOME": ".cargo", "PYENV_ROOT": ".pyenv"}
 
 

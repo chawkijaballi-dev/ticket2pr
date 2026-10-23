@@ -288,6 +288,14 @@ async def test_run_tests_keep_version_manager_homes(
     assert report.output_tail == f"{tmp_path}|\n"
 
 
+async def test_run_tests_keep_proxy_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.test:3128")
+    report = await run_tests('echo "$HTTPS_PROXY"', tmp_path, timeout_s=10, sandbox=None)
+    assert report.output_tail == "http://proxy.test:3128\n"
+
+
 async def test_run_tests_never_climb_into_an_enclosing_repository(tmp_path: Path) -> None:
     git(tmp_path, "init", "-q")  # e.g. a data dir inside the operator's checkout
     workspace = tmp_path / "data" / "work"
@@ -341,6 +349,7 @@ def test_commit_message_and_title() -> None:
         assert "@\u200bbob" in text
     url = render.pr_title(Ticket(key="PROJ-1", title="Fixes https://github.com/a/b/issues/7"))
     assert "F\u200bixes https://github.com/a/b/issues/7" in url
+    assert "G\u200bH-7" in render.pr_title(Ticket(key="PROJ-1", title="See GH-7"))
 
 
 def test_pr_body_contents() -> None:
