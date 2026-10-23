@@ -378,8 +378,9 @@ def test_subreaper_kills_a_process_that_keeps_reforking() -> None:
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux prctl")
 def test_survivors_refuse_publishing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("ticket2pr.sandbox._descendants", lambda _root: [(999_999, "R")])
+    monkeypatch.setattr("ticket2pr.sandbox.os.kill", lambda *_args: None)  # never a real pid
     with pytest.raises(PolicyViolationError, match="not publishing"):
-        kill_descendants(deadline_s=0)
+        kill_descendants(deadline_s=-1)
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux prctl")

@@ -146,7 +146,7 @@ async def _run_task(
     shutil.copytree(task.path / "repo", origin)
     _git(origin, "init", "-q", "-b", base.base_branch)
     _git(origin, "add", "-A")
-    _git(origin, "-c", "user.name=eval", "-c", "user.email=eval@localhost", "commit", "-qm", "base")
+    _git(origin, "commit", "-qm", "base")
     _git(origin, "config", "receive.denyCurrentBranch", "ignore")
     tickets = scratch / "tickets"
     tickets.mkdir()

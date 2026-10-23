@@ -832,3 +832,29 @@ async def test_sandbox_mount_stubs_are_not_committed(
     job = await pipeline.run(claim(store, "CALC-1"))
     files = git(repos_dir / REPO, "show", "--name-only", "--format=", _branch(job)).split()
     assert sorted(files) == ["calc.py", "empty_module.py", "package.json", "real.json"]
+
+
+@pytest.mark.parametrize("failing_call", [2, 3])  # 2: the pre-publish sweep, 3: the final one
+async def test_surviving_leftovers_block_publishing_only(
+    make_pipeline: MakePipeline,
+    store: JobStore,
+    repos_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failing_call: int,
+) -> None:
+    """Survivors before the push stop it; after the job they are only logged."""
+    status = "failed" if failing_call == 2 else "succeeded"
+    calls = 0
+
+    def sweep() -> int:
+        nonlocal calls
+        calls += 1
+        if calls == failing_call:
+            raise PolicyViolationError("1 leftover untrusted process(es) survived; not publishing")
+        return 0
+
+    monkeypatch.setattr("ticket2pr.pipeline.kill_descendants", sweep)
+    job = await make_pipeline(ScriptedAgent([fix_add])).run(claim(store, "CALC-1"))
+    assert job.status.value == status
+    pushed = git(repos_dir / REPO, "branch", "--list", "ticket2pr/*").strip()
+    assert bool(pushed) is (status == "succeeded")

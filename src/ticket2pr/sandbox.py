@@ -213,8 +213,8 @@ def kill_descendants(root: int | None = None, *, deadline_s: float = 10.0) -> in
         if time.monotonic() > deadline:
             if live:
                 raise PolicyViolationError(
-                    f"{len(live)} process(es) left by the agent or the tests survived; "
-                    "not publishing"
+                    f"{len(live)} leftover untrusted process(es) survived the sweep; not "
+                    "publishing (restart the worker if this persists)"
                 )
             break  # zombies another descendant still has to reap: harmless
         for sig in (signal.SIGSTOP, signal.SIGKILL):
