@@ -151,6 +151,11 @@ class Settings(BaseSettings):
             self.workers = 1
         return self
 
+    @field_validator("sandbox_readonly_paths")
+    @classmethod
+    def _expand_readonly_paths(cls, value: list[Path]) -> list[Path]:
+        return [path.expanduser() for path in value]  # "~/.rustup" from a .env
+
     @field_validator("fork_owner")
     @classmethod
     def _check_fork_owner(cls, value: str) -> str:

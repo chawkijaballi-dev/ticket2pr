@@ -191,10 +191,18 @@ class Pipeline:
             author_name=settings.commit_author_name,
             author_email=settings.commit_author_email,
         )
+        # Before any authenticated network call from this clone (e.g. an injected insteadOf).
         if publish.config_bytes() != publish_config:
             raise PolicyViolationError("the publish clone's git config changed; not pushing")
         push_repo, head = self._push_target(job.repo, job.branch)
-        await publish.push(self._host.clone_url(push_repo), job.branch, auth=auth)
+        push_url = self._host.clone_url(push_repo)
+        # The push replaces the branch: never over commits a person added to the PR.
+        author = await publish.remote_head_author(push_url, job.branch, auth=auth)
+        if author is not None and author != settings.commit_author_email:
+            raise PolicyViolationError(
+                f"{job.branch} has commits ticket2pr did not make; not overwriting them"
+            )
+        await publish.push(push_url, job.branch, auth=auth)
         pr = await self._host.open_or_update_pr(
             job.repo,
             head=head,

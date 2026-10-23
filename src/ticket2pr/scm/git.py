@@ -152,6 +152,16 @@ class GitRepo:
         await self._run("commit", "--quiet", "--no-verify", "-m", message, env=identity)
         return await self.head()
 
+    async def remote_head_author(
+        self, url: str, branch: str, *, auth: GitAuth | None = None
+    ) -> str | None:
+        """Author email of ``branch``'s head on the remote, or ``None`` if it does not exist."""
+        env = auth.env() if auth else None
+        if not (await self._run("ls-remote", url, f"refs/heads/{branch}", env=env)).strip():
+            return None
+        await self._run("fetch", "--quiet", "--depth=1", url, f"refs/heads/{branch}", env=env)
+        return (await self._run("log", "-1", "--format=%ae", "FETCH_HEAD")).strip()
+
     async def push(self, url: str, branch: str, *, auth: GitAuth | None = None) -> None:
         # Force: the branch belongs to ticket2pr and a re-run replaces the previous attempt.
         await self._run(

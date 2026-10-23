@@ -21,6 +21,9 @@ All notable changes to this project are documented here. The format follows
   (by this version: older kept workspaces have no `.keep` marker and are removed);
   git aborts a clone or push stalled under 1 KB/s for 60 s.
 - A gracefully interrupted job tells the ticket to re-add the label.
+- A re-run refuses to force-push over a PR branch whose head commit ticket2pr did not make
+  (a reviewer's fixups are never discarded).
+- `T2P_SANDBOX_READONLY_PATHS` expands `~`.
 - Background Bash commands are refused, and Claude Code's background tasks disabled (no
   auto-backgrounding of timed-out commands): they could race the file tools, which run outside
   the OS sandbox and are confined by the guard alone (now documented).

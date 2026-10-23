@@ -88,6 +88,13 @@ def test_toolchain_paths_never_re_expose_a_hidden_directory(
     assert tools.resolve() in paths
 
 
+def test_readonly_paths_expand_the_home_directory(settings: Settings) -> None:
+    configured = Settings.model_validate(
+        {**settings.model_dump(), "sandbox_readonly_paths": ["~/.rustup"]}
+    )
+    assert configured.sandbox_readonly_paths == [Path.home() / ".rustup"]
+
+
 def test_claude_config_dir_is_hidden(
     settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

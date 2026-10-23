@@ -354,6 +354,26 @@ async def test_rerun_updates_the_existing_pr(
     assert first.pr_url == second.pr_url
 
 
+async def test_rerun_never_overwrites_a_persons_commits(
+    make_pipeline: MakePipeline, store: JobStore, repos_dir: Path, tmp_path: Path
+) -> None:
+    pipeline = make_pipeline(ScriptedAgent([fix_add]))
+    first = await pipeline.run(claim(store, "CALC-1"))
+    branch = _branch(first)
+    clone = tmp_path / "dev"
+    git(tmp_path, "clone", "-q", "--branch", branch, str(repos_dir / REPO), str(clone))
+    (clone / "NOTES.md").write_text("reviewer fixup\n")
+    git(clone, "add", "NOTES.md")
+    git(clone, "-c", "user.email=dev@acme.test", "commit", "-q", "-m", "fixup")
+    git(clone, "push", "-q", "origin", branch)
+    head = git(repos_dir / REPO, "rev-parse", branch)
+
+    second = await pipeline.run(claim(store, "CALC-1"))
+    assert second.status is JobStatus.FAILED
+    assert second.error == f"{branch} has commits ticket2pr did not make; not overwriting them"
+    assert git(repos_dir / REPO, "rev-parse", branch) == head
+
+
 async def test_without_test_command_pr_is_draft(
     make_pipeline: MakePipeline, store: JobStore, repos_dir: Path
 ) -> None:
