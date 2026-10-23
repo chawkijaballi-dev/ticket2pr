@@ -32,6 +32,7 @@ from ticket2pr.domain import AgentOutcome, AgentResult, Usage
 from ticket2pr.sandbox import ensure_sandbox_available
 
 logger = logging.getLogger(__name__)
+_SHARED_TMP = "/tmp/claude"  # noqa: S108 - Claude Code's default, shared by every session
 
 # Built-in tools the agent may use. Web access and sub-agents are left out: the ticket and the
 # repository are the whole context, and fewer tools means fewer ways to exfiltrate data.
@@ -134,6 +135,10 @@ class ClaudeAgent:
 
     def build_options(self, task: AgentTask, policy: Policy, budget: float) -> ClaudeAgentOptions:
         workspace = task.workspace.resolve()
+        # Claude Code's sandbox otherwise gives every job the same writable /tmp/claude: a
+        # private one per job (next to the workspace, deleted with it) keeps jobs apart.
+        agent_tmp = workspace.parent / "agent-tmp"
+        agent_tmp.mkdir(exist_ok=True)
         sandbox = cast(
             "SandboxSettings",
             {
@@ -146,8 +151,14 @@ class ClaudeAgent:
                 # Bash reads are deny-listed: hide the service's home and data (other jobs,
                 # the job database, credentials), then re-open the workspace and toolchains.
                 "filesystem": {
-                    "denyRead": [str(path) for path in self._read_denied],
-                    "allowRead": [str(workspace), *(str(p) for p in self._read_allowed)],
+                    "denyRead": [*(str(path) for path in self._read_denied), _SHARED_TMP],
+                    "allowRead": [
+                        str(workspace),
+                        str(agent_tmp),
+                        *(str(p) for p in self._read_allowed),
+                    ],
+                    "allowWrite": [str(agent_tmp)],
+                    "denyWrite": [_SHARED_TMP],
                 },
             },
         )
@@ -180,6 +191,7 @@ class ClaudeAgent:
                 **dict.fromkeys(secret_env_names(), ""),
                 **({"ANTHROPIC_API_KEY": self._api_key} if self._api_key else {}),
                 "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
+                "CLAUDE_CODE_TMPDIR": str(agent_tmp),
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "PYTHONNOUSERSITE": "1",  # no usercustomize.py planted in $HOME by a past job
             },

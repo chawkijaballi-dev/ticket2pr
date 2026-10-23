@@ -39,8 +39,8 @@ class LocalTracker:
         try:
             return Ticket(
                 key=key,
-                title=str(raw.get("title", "")),
-                description=str(raw.get("description", "")),
+                title=str(raw.get("title") or ""),  # `title:` alone is YAML null
+                description=str(raw.get("description") or ""),
                 labels=tuple(str(label) for label in raw.get("labels") or ()),
                 issue_type=str(raw.get("type", "Task")),
             )

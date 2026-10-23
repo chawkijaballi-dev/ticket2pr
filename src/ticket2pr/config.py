@@ -208,7 +208,9 @@ def secret_env_names() -> tuple[str, ...]:
         alias = field.validation_alias
         if isinstance(alias, AliasChoices):
             names.update(choice for choice in alias.choices if isinstance(choice, str))
+    # Settings match variable names case-insensitively: hide every spelling that is set,
+    # except the exact Claude credential names, which Claude Code itself needs.
+    known = names | set(CLAUDE_CREDENTIAL_ENV_VARS)
+    names.update(key for key in os.environ if key.upper() in known)
     names.difference_update(CLAUDE_CREDENTIAL_ENV_VARS)
-    # Settings match variable names case-insensitively: hide every spelling that is set.
-    names.update(key for key in os.environ if key.upper() in names)
     return tuple(sorted(names))

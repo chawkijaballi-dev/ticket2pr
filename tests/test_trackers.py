@@ -122,6 +122,12 @@ async def test_local_tracker_rejects_bad_files(tmp_path: Path, content: str, mes
         await LocalTracker(tmp_path).get_ticket("ABC-1")
 
 
+async def test_local_tracker_treats_empty_fields_as_empty(tmp_path: Path) -> None:
+    (tmp_path / "ABC-1.yaml").write_text("title:\ndescription:\n")
+    ticket = await LocalTracker(tmp_path).get_ticket("ABC-1")
+    assert (ticket.title, ticket.description) == ("", "")
+
+
 async def test_local_tracker_empty_file_gives_empty_ticket(tmp_path: Path) -> None:
     (tmp_path / "ABC-1.yaml").write_text("")
     assert (await LocalTracker(tmp_path).get_ticket("ABC-1")).title == ""

@@ -178,6 +178,17 @@ async def test_sandbox_allows_workspace_writes_only(
 
 
 @needs_bwrap
+async def test_sandbox_tmpdir_exists(
+    workspace: Path, sandbox: TestSandbox, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host_only = tmp_path / "host-tmp"  # exists on the host, not inside the sandbox
+    host_only.mkdir()
+    monkeypatch.setenv("TMPDIR", str(host_only))
+    report = await run_tests("mktemp", workspace, timeout_s=30, sandbox=sandbox)
+    assert report.passed, report.output_tail
+
+
+@needs_bwrap
 async def test_sandbox_exposes_no_host_ipc_socket(workspace: Path, sandbox: TestSandbox) -> None:
     """A user D-Bus socket would let `systemd-run --user` start a process outside the sandbox."""
     output = await _run(

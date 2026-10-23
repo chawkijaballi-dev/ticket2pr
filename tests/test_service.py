@@ -237,13 +237,15 @@ def test_startup_resumes_queued_jobs(
             settings, tickets_dir=tickets_dir, repos_dir=repos_dir, agent=ScriptedAgent([fix_add])
         )
         runtime.store.claim("CALC-1", None)  # left queued by a previous process
+        runtime.store.claim("../../secure/x?#", None)  # tampered with (unsandboxed mode)
         return runtime
 
     with TestClient(create_app(service_settings, runtime_factory=factory)) as test_client:
         queue: JobQueue = test_client.app.state.queue  # type: ignore[attr-defined]
         test_client.portal.call(queue.join)  # type: ignore[union-attr]
         runtime: Runtime = test_client.app.state.runtime  # type: ignore[attr-defined]
-        assert runtime.store.list()[0].status is JobStatus.SUCCEEDED
+        statuses = {job.ticket_key: job.status for job in runtime.store.list()}
+        assert statuses == {"CALC-1": JobStatus.SUCCEEDED, "../../secure/x?#": JobStatus.FAILED}
 
 
 # ── queue ───────────────────────────────────────────────────────────────

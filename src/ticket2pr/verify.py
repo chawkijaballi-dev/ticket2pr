@@ -39,7 +39,7 @@ def detect_test_command(workspace: Path) -> str | None:
     if any((workspace / name).is_file() for name in python_markers) and _has_python_tests(
         workspace
     ):
-        return "python -m pytest -q"
+        return "python3 -m pytest -q"  # Debian/Ubuntu ship no `python` by default
     if (workspace / "go.mod").is_file():
         return "go test ./..."
     if (workspace / "Cargo.toml").is_file():
@@ -79,9 +79,11 @@ async def run_tests(
     env["PYTHONNOUSERSITE"] = "1"
     argv = ["/bin/sh", "-c", command]
     if sandbox is not None:
+        env["TMPDIR"] = "/tmp"  # noqa: S108 - the sandbox's own tmpfs; the host's is hidden
         return await _execute(command, sandbox.wrap(argv, workspace), workspace, env, timeout_s)
     # Nothing contains these tests: give each run a fresh HOME and TMPDIR, so what a previous
     # job left there (~/.npmrc, tool configs, caches) cannot run inside this job's tests.
+    # Version-manager homes (_toolchain_homes) stay shared: see docs/security.md.
     with tempfile.TemporaryDirectory(prefix="t2p-tests-", ignore_cleanup_errors=True) as scratch:
         env["HOME"] = env["TMPDIR"] = scratch
         return await _execute(command, argv, workspace, env, timeout_s)

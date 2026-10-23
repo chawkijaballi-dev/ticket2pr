@@ -225,10 +225,15 @@ async def test_options_lock_down_the_agent(task: AgentTask) -> None:
     assert options.env["PYTHONDONTWRITEBYTECODE"] == "1"
     sandbox: dict[str, Any] = dict(options.sandbox)
     assert sandbox["failIfUnavailable"] is True
+    agent_tmp = task.workspace.resolve().parent / "agent-tmp"  # per job, not /tmp/claude
     assert sandbox["filesystem"] == {
-        "denyRead": ["/home/svc", "/srv/t2p"],
-        "allowRead": [str(task.workspace.resolve()), "/opt/python"],
+        "denyRead": ["/home/svc", "/srv/t2p", "/tmp/claude"],
+        "allowRead": [str(task.workspace.resolve()), str(agent_tmp), "/opt/python"],
+        "allowWrite": [str(agent_tmp)],
+        "denyWrite": ["/tmp/claude"],
     }
+    assert agent_tmp.is_dir()
+    assert options.env["CLAUDE_CODE_TMPDIR"] == str(agent_tmp)
     assert isinstance(options.settings, str)
     assert json.loads(options.settings) == {
         "permissions": {"blockReadsOutsideWorkingDirectories": True}

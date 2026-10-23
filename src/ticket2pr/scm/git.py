@@ -264,5 +264,11 @@ async def _communicate_bounded(
     except asyncio.IncompleteReadError as exc:  # EOF within the limit
         await process.wait()
         return exc.partial, await stderr
+    # Drain to EOF before anyone waits: wait() also waits for the pipes, and a full buffer
+    # would leave stdout paused (and the wait hanging) forever.
+    with suppress(ProcessLookupError):
+        process.kill()
+    while await process.stdout.read(65_536):
+        pass
     stderr.cancel()
     raise PolicyViolationError(f"git {command} output exceeds {max_bytes} bytes")

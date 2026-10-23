@@ -13,13 +13,24 @@ All notable changes to this project are documented here. The format follows
 - `registry.npmjs.org` is no longer in the default `T2P_NETWORK_ALLOWLIST` (it accepts
   `npm publish`); add it explicitly for JavaScript repositories.
 - Test runs judge the shell's exit code and kill whatever the suite left running; without
-  the sandbox, each run gets a fresh `HOME` and `TMPDIR`.
+  the sandbox, each run gets a fresh `HOME` and `TMPDIR`. `RUSTUP_HOME`, `CARGO_HOME` and
+  `PYENV_ROOT` are passed through so version-managed toolchains keep working.
+- Jobs fail on file names that are not valid UTF-8.
+- Auto-detected Python tests run `python3 -m pytest -q`; sandboxed tests get `TMPDIR=/tmp`.
+- Sockets, FIFOs and device files left in the workspace are not copied to the publish clone.
 
 ### Security
 
 - Literal git pathspecs, so protected paths such as `:x/.env` are never committed.
 - The guard expands `~/` before confining file tools to the workspace.
-- The changed files are size-capped before the in-memory secret scan.
+- The staged diff is read with a 20 MiB bound before the in-memory secret scan.
+- A job fails closed when a protected path is still staged after unstaging.
+- The `PreToolUse` hook denies a call when the guard itself raises.
+- Secret variables are hidden from the agent whatever the case of their names.
+- Images and raw HTML in the agent's summary are escaped in PR bodies; errors in ticket
+  comments are a single code span.
+- Each job gets its own Claude Code temp directory instead of the shared `/tmp/claude`.
+- Jobs re-enqueued at startup are failed when their ticket key is invalid.
 
 ## [0.1.0] - 2026-10-22
 

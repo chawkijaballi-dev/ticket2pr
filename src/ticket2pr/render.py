@@ -8,6 +8,7 @@ from ticket2pr.domain import AgentResult, ChangeSet, PullRequest, TestReport, Ti
 
 _MAX_SUMMARY_CHARS = 6_000
 _MAX_TEST_TAIL_CHARS = 3_000
+_HTML_START = re.compile(r"<(?=[A-Za-z/!?])")
 
 
 def commit_message(ticket: Ticket) -> str:
@@ -32,7 +33,7 @@ def pr_body(
     excluded: tuple[str, ...] = (),
 ) -> str:
     ticket_ref = f"[{ticket.key}]({ticket.url})" if ticket.url else ticket.key
-    summary = agent.summary[:_MAX_SUMMARY_CHARS] or "_The agent did not provide a summary._"
+    summary = _inert(agent.summary[:_MAX_SUMMARY_CHARS]) or "_The agent did not provide a summary._"
     sections = [
         f"Resolves {ticket_ref}: {ticket.title}",
         summary,
@@ -42,8 +43,8 @@ def pr_body(
         "## Agent run\n\n" + usage_table(usage, model=model),
     ]
     if agent.denied_actions or excluded:
-        lines = [f"- Blocked: `{action}`" for action in agent.denied_actions]
-        lines += [f"- Not committed (protected path): `{path}`" for path in excluded]
+        lines = [f"- Blocked: {_code_span(action)}" for action in agent.denied_actions]
+        lines += [f"- Not committed (protected path): {_code_span(path)}" for path in excluded]
         sections.append("## Guardrail events\n\n" + "\n".join(lines))
     sections.append("---\n_Opened by ticket2pr. Review it like any other contribution._")
     return "\n\n".join(sections)
@@ -89,7 +90,8 @@ def tracker_comment(
     if published is None:
         reason = error or "unknown error"
         return (
-            f"ticket2pr could not open a pull request: {reason}\n\n"
+            # One plain code span (the ADF converter knows no other): links in it stay text.
+            f"ticket2pr could not open a pull request: {_code_span(reason.replace('`', "'"))}\n\n"
             f"Spent {usage.cost_label} over {usage.turns} agent turns."
         )
     pr, tests = published
@@ -107,3 +109,22 @@ def tracker_comment(
         f"- Tokens: `{usage.total_tokens:,}`\n"
         f"- Agent turns: `{usage.turns}`"
     )
+
+
+def _inert(markdown: str) -> str:
+    """Agent-written Markdown without images or raw HTML.
+
+    The ticket can steer the agent, and GitHub fetches every image of a PR body for each
+    viewer: an image URL could carry repository data out. shortcut: this also escapes
+    ``![`` and ``<tag`` inside code blocks, where the escape shows; parse the Markdown if
+    that ever matters.
+    """
+    return _HTML_START.sub("&lt;", markdown.replace("![", "!\\["))
+
+
+def _code_span(text: str) -> str:
+    """Inline code that no backtick in ``text`` can close early."""
+    text = " ".join(text.split())  # a code span cannot hold a blank line
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    ticks = "`" * (longest + 1)
+    return f"{ticks} {text} {ticks}"

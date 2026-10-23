@@ -130,7 +130,12 @@ def start_queue(runtime: Runtime, *, workers: int) -> JobQueue:
     pending = runtime.store.list(limit=10_000, status=JobStatus.QUEUED)
     for job in reversed(pending):  # oldest first
         # The database may have been written by untrusted code (unsandboxed mode): never take
-        # a repository from it, re-resolve it from T2P_REPOS when the job runs.
+        # a repository from it, re-resolve it from T2P_REPOS when the job runs, and never
+        # build a tracker URL from a key the webhook would have refused.
+        if not is_ticket_key(job.ticket_key):
+            job.status, job.error = JobStatus.FAILED, "invalid ticket key in the job database"
+            runtime.store.save(job)
+            continue
         job.repo = None
         queue.enqueue(job)
     if pending:
