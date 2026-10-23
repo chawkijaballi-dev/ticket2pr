@@ -65,6 +65,7 @@ class EvalResult:
     turns: int
     duration_s: float
     error: str | None = None
+    cost_capped: bool = False  # cost_usd is the budget cap, not a measurement (e.g. a timeout)
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +81,10 @@ class EvalSummary:
         return sum(r.cost_usd for r in self.results)
 
     @property
+    def any_cost_capped(self) -> bool:
+        return any(r.cost_capped for r in self.results)
+
+    @property
     def cost_per_resolved_usd(self) -> float | None:
         resolved = sum(r.resolved for r in self.results)
         return self.total_cost_usd / resolved if resolved else None
@@ -90,6 +95,7 @@ class EvalSummary:
                 "resolve_rate": self.resolve_rate,
                 "total_cost_usd": self.total_cost_usd,
                 "cost_per_resolved_usd": self.cost_per_resolved_usd,
+                "any_cost_capped": self.any_cost_capped,  # then the costs are upper bounds
                 "results": [asdict(result) for result in self.results],
             },
             indent=2,
@@ -186,6 +192,7 @@ async def _run_task(
         status=job.status.value,
         resolved=resolved,
         cost_usd=job.usage.cost_usd,
+        cost_capped=job.usage.cost_capped,
         total_tokens=job.usage.total_tokens,
         turns=job.usage.turns,
         duration_s=job.usage.duration_s,

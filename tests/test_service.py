@@ -26,7 +26,7 @@ from ticket2pr.errors import ConfigurationError
 from ticket2pr.pipeline import RunOptions
 from ticket2pr.runtime import Runtime, build_runtime
 from ticket2pr.scm.host import GitHubHost
-from ticket2pr.server import create_app, trigger_from_event, verify_signature
+from ticket2pr.server import _Deliveries, create_app, trigger_from_event, verify_signature
 from ticket2pr.store import JobStore
 from ticket2pr.trackers.jira import JiraTracker
 from ticket2pr.worker import JobQueue
@@ -210,6 +210,15 @@ def test_webhook_refuses_replays(client: TestClient) -> None:
     assert replay.json()["reason"] == "duplicate delivery"
     stale = _post(client, _event(timestamp=int(time.time() * 1000) - 2 * 3600 * 1000))
     assert stale.json()["reason"] == "stale event"
+
+
+def test_remembered_deliveries_are_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("ticket2pr.server._MAX_REMEMBERED_DELIVERIES", 2)
+    deliveries = _Deliveries()
+    for body in (b"1", b"2", b"3"):
+        deliveries.remember(body)
+    assert deliveries.refusal(b"1", {}) == ""  # the oldest is forgotten
+    assert deliveries.refusal(b"2", {}) == deliveries.refusal(b"3", {}) == "duplicate delivery"
 
 
 def test_jobs_api_auth(client: TestClient) -> None:

@@ -129,3 +129,12 @@ async def test_developer_git_config_cannot_break_the_suite(
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(hostile))
     summary = await run_suite(discover(TASKS, ["slugify"]), settings=settings)
     assert summary.resolve_rate == 1.0
+
+
+def test_capped_costs_are_marked_as_upper_bounds() -> None:
+    measured = EvalResult("a", "A-1", "succeeded", True, 0.5, 10, 1, 1.0)
+    capped = EvalResult("b", "B-1", "failed", False, 2.0, 0, 0, 1.0, cost_capped=True)
+    assert not EvalSummary((measured,)).any_cost_capped
+    report = json.loads(EvalSummary((measured, capped)).to_json())
+    assert report["any_cost_capped"] is True
+    assert report["results"][1]["cost_capped"] is True

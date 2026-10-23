@@ -231,7 +231,7 @@ def eval_(
             result.ticket,
             result.status,
             "[green]yes[/green]" if result.resolved else "[red]no[/red]",
-            f"${result.cost_usd:.2f}",
+            ("≤ " if result.cost_capped else "") + f"${result.cost_usd:.2f}",
             f"{result.total_tokens:,}",
             str(result.turns),
         )
@@ -240,10 +240,11 @@ def eval_(
         if result.error:
             console.print(f"[red]{result.task}:[/red] {result.error}", soft_wrap=True)
     per_resolved = summary.cost_per_resolved_usd
+    bound = "≤ " if summary.any_cost_capped else ""  # a capped cost is an upper bound
     console.print(
         f"Resolved {summary.resolve_rate:.0%} of {len(summary.results)} task(s) · "
-        f"total ${summary.total_cost_usd:.2f} · "
-        f"per resolved ticket {'-' if per_resolved is None else f'${per_resolved:.2f}'}"
+        f"total {bound}${summary.total_cost_usd:.2f} · "
+        f"per resolved ticket {'-' if per_resolved is None else f'{bound}${per_resolved:.2f}'}"
     )
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
