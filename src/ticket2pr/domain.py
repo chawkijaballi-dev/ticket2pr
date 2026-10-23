@@ -126,10 +126,6 @@ class JobStatus(StrEnum):
     FAILED = "failed"  # no PR opened
     SKIPPED = "skipped"  # the ticket lacks the trigger label
 
-    @property
-    def terminal(self) -> bool:
-        return self not in {JobStatus.QUEUED, JobStatus.RUNNING}
-
 
 class Job(BaseModel):
     """One processing attempt of one ticket. Mutable: the pipeline advances it."""

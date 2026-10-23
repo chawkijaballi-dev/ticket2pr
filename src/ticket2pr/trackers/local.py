@@ -42,7 +42,7 @@ class LocalTracker:
                 title=str(raw.get("title") or ""),  # `title:` alone is YAML null
                 description=str(raw.get("description") or ""),
                 labels=tuple(str(label) for label in raw.get("labels") or ()),
-                issue_type=str(raw.get("type", "Task")),
+                issue_type=str(raw.get("type") or "Task"),
             )
         except ValidationError as exc:
             raise TrackerError(f"{path}: {exc}") from exc

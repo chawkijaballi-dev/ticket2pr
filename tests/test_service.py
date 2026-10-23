@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
+import signal
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -16,6 +18,7 @@ from typer.testing import CliRunner
 
 from conftest import MakePipeline, ScriptedAgent, fix_add
 from ticket2pr import cli
+from ticket2pr.agent.base import AgentTask
 from ticket2pr.config import Settings
 from ticket2pr.domain import Job, JobStatus
 from ticket2pr.errors import ConfigurationError
@@ -222,11 +225,13 @@ def test_startup_fails_interrupted_jobs(
         assert job is not None
         job.status = JobStatus.RUNNING
         runtime.store.save(job)
+        (settings.workspaces_dir / f"job-{job.id}" / "work").mkdir(parents=True)  # left behind
         return runtime
 
     with TestClient(create_app(service_settings, runtime_factory=factory)) as test_client:
         runtime: Runtime = test_client.app.state.runtime  # type: ignore[attr-defined]
         assert runtime.store.list()[0].status is JobStatus.FAILED
+        assert list(runtime.settings.workspaces_dir.glob("job-*")) == []
 
 
 def test_startup_resumes_queued_jobs(
@@ -328,6 +333,31 @@ def test_cli_run_failure_exit_code(cli_env: None, tickets_dir: Path, repos_dir: 
     result = runner.invoke(cli.app, args)
     assert result.exit_code == 1
     assert "failed" in result.output
+
+
+def test_cli_run_refuses_a_ticket_already_in_progress(
+    cli_env: None, tickets_dir: Path, repos_dir: Path
+) -> None:
+    with JobStore(Settings().db_path) as store:
+        store.claim("CALC-1", None)
+    args = ["run", "CALC-1", "--tickets-dir", str(tickets_dir), "--repos-dir", str(repos_dir)]
+    result = runner.invoke(cli.app, args)
+    assert result.exit_code == 1
+    assert "already has a job in progress" in result.output
+
+
+def test_cli_run_records_sigterm_as_interrupted(
+    cli_env: None, tickets_dir: Path, repos_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def terminated(task: AgentTask) -> None:
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    monkeypatch.setattr("ticket2pr.runtime.build_agent", lambda _: ScriptedAgent([terminated]))
+    args = ["run", "CALC-1", "--tickets-dir", str(tickets_dir), "--repos-dir", str(repos_dir)]
+    result = runner.invoke(cli.app, args)
+    assert result.exit_code == 143, result.output
+    with JobStore(Settings().db_path) as store:
+        assert store.list()[0].status is JobStatus.FAILED  # not left "running"
 
 
 def test_cli_run_rejects_bad_key() -> None:

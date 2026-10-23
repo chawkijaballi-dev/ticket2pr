@@ -35,7 +35,7 @@ def pr_body(
     ticket_ref = f"[{ticket.key}]({ticket.url})" if ticket.url else ticket.key
     summary = _inert(agent.summary[:_MAX_SUMMARY_CHARS]) or "_The agent did not provide a summary._"
     sections = [
-        f"Resolves {ticket_ref}: {ticket.title}",
+        f"Resolves {ticket_ref}: {_inert(ticket.title)}",
         summary,
         "## Verification\n\n" + _tests_section(tests),
         "## Change size\n\n"
@@ -112,14 +112,14 @@ def tracker_comment(
 
 
 def _inert(markdown: str) -> str:
-    """Agent-written Markdown without images or raw HTML.
+    """Untrusted Markdown (agent text, ticket title) without links, images or raw HTML.
 
     The ticket can steer the agent, and GitHub fetches every image of a PR body for each
-    viewer: an image URL could carry repository data out. shortcut: this also escapes
-    ``![`` and ``<tag`` inside code blocks, where the escape shows; parse the Markdown if
-    that ever matters.
+    viewer: an image URL could carry repository data out. Escaping every ``[`` also kills
+    reference definitions (``[x]: url``), which apply to the whole document. shortcut: the
+    escapes also show inside code blocks; parse the Markdown if that ever matters.
     """
-    return _HTML_START.sub("&lt;", markdown.replace("![", "!\\["))
+    return _HTML_START.sub("&lt;", markdown.replace("[", "\\["))
 
 
 def _code_span(text: str) -> str:

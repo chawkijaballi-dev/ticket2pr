@@ -25,6 +25,7 @@ from conftest import (
 from ticket2pr.agent.base import AgentTask
 from ticket2pr.config import Settings
 from ticket2pr.domain import AgentOutcome, AgentResult, Job, JobStatus
+from ticket2pr.errors import SCMError
 from ticket2pr.pipeline import Pipeline, RunOptions
 from ticket2pr.scm.git import GitRepo, sync_tree
 from ticket2pr.scm.host import LocalHost
@@ -131,8 +132,54 @@ async def test_agent_error_outcome_fails_job(make_pipeline: MakePipeline, store:
     agent = ScriptedAgent([fix_add], outcome=AgentOutcome.BUDGET_EXCEEDED)
     job = await make_pipeline(agent).run(claim(store, "CALC-1"))
     assert job.status is JobStatus.FAILED
-    assert "budget_exceeded" in (job.error or "")
+    assert job.error == "agent stopped: budget_exceeded"  # never the agent's own text
     assert job.usage.cost_usd == pytest.approx(0.5)  # spend is recorded even on failure
+
+
+async def test_cancelled_attempt_counts_its_whole_budget(
+    make_pipeline: MakePipeline, store: JobStore
+) -> None:
+    class Hanging(ScriptedAgent):
+        async def run(self, task: AgentTask) -> AgentResult:
+            await asyncio.sleep(3600)
+            raise AssertionError
+
+    run = asyncio.create_task(make_pipeline(Hanging([])).run(claim(store, "CALC-1")))
+    await asyncio.sleep(0.5)
+    run.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await run
+    job = store.list()[0]
+    assert job.usage.cost_capped
+    assert job.usage.cost_usd == pytest.approx(2.0)  # the fixture's max_budget_usd
+
+
+async def test_protected_path_left_staged_fails_closed(
+    make_pipeline: MakePipeline, store: JobStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def leak(task: AgentTask) -> None:
+        fix_add(task)
+        (task.workspace / ".env").write_text("SECRET=1\n")
+
+    async def no_unstage(self: GitRepo, paths: list[str]) -> None:
+        return None
+
+    monkeypatch.setattr(GitRepo, "unstage", no_unstage)
+    job = await make_pipeline(ScriptedAgent([leak])).run(claim(store, "CALC-1"))
+    assert job.status is JobStatus.FAILED
+    assert job.error == "a protected path could not be unstaged"
+
+
+async def test_base_branch_moved_during_the_run(
+    make_pipeline: MakePipeline, store: JobStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def gone(self: GitRepo, branch: str, base: str) -> None:
+        raise SCMError("fatal: not a commit")
+
+    monkeypatch.setattr(GitRepo, "checkout_new_branch", gone)
+    job = await make_pipeline(ScriptedAgent([fix_add])).run(claim(store, "CALC-1"))
+    assert job.status is JobStatus.FAILED
+    assert "moved too far during the run" in (job.error or "")
 
 
 async def test_protected_paths_are_never_committed(

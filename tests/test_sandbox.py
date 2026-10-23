@@ -22,6 +22,7 @@ from ticket2pr.sandbox import (
     become_subreaper,
     ensure_sandbox_available,
     harden_service_process,
+    hidden_paths,
     kill_descendants,
     make_process_undumpable,
     missing_sandbox_tools,
@@ -72,6 +73,13 @@ def test_profile_follows_settings(settings: Settings, tmp_path: Path) -> None:
     assert Path("/") not in profile.hidden
     assert Path(sys.prefix) in profile.readonly
     assert tmp_path.resolve() in profile.readonly
+
+
+def test_claude_config_dir_is_hidden(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))  # the `claude` login
+    assert (tmp_path / "claude").resolve() in hidden_paths(settings)
 
 
 def test_wrap_builds_the_bwrap_command(tmp_path: Path) -> None:

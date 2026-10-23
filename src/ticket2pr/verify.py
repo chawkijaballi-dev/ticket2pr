@@ -2,7 +2,8 @@
 
 The tests execute code the agent just wrote. They run in the bubblewrap sandbox described in
 ``ticket2pr.sandbox``, with a minimal environment (no credentials), in their own process
-group; the whole group is killed when the run ends, so nothing they start outlives it.
+group, killed when the run ends. A process that leaves the group dies with the sandbox's PID
+namespace, or, unsandboxed, with ``sandbox.kill_descendants`` after the job's agent and tests.
 """
 
 from __future__ import annotations
@@ -31,9 +32,10 @@ _TOOLCHAIN_HOMES = {"RUSTUP_HOME": ".rustup", "CARGO_HOME": ".cargo", "PYENV_ROO
 def detect_test_command(workspace: Path) -> str | None:
     """Best-effort guess of the command that runs the repository's tests."""
     if (workspace / "package.json").is_file():
-        with suppress(ValueError, OSError):
+        with suppress(ValueError, OSError, AttributeError):  # not JSON, or not an object
             scripts = json.loads((workspace / "package.json").read_text("utf-8")).get("scripts")
-            if isinstance(scripts, dict) and "test" in scripts:
+            test = scripts.get("test") if isinstance(scripts, dict) else None
+            if isinstance(test, str) and "no test specified" not in test:  # npm init default
                 return "npm test --silent"
     python_markers = ("pyproject.toml", "pytest.ini", "setup.cfg", "tox.ini", "setup.py")
     if any((workspace / name).is_file() for name in python_markers) and _has_python_tests(

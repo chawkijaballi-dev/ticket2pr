@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import shutil
+import signal
 from pathlib import Path
 from typing import Annotated
 
@@ -96,6 +97,11 @@ def run(
     options = RunOptions(require_label=require_label, keep_workspace=keep_workspace)
 
     async def _run() -> Job:
+        # SIGTERM (timeout, CI cancel, docker stop) cancels like Ctrl-C, so the job is recorded
+        # as interrupted instead of being left "running" and blocking the ticket.
+        main = asyncio.current_task()
+        assert main is not None  # noqa: S101 - called by asyncio.run
+        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, main.cancel)
         async with open_runtime(settings, tickets_dir=tickets_dir, repos_dir=repos_dir) as rt:
             job = rt.store.claim(ticket, repo)
             if job is None:
@@ -107,6 +113,9 @@ def run(
     except Ticket2PRError as exc:
         console.print(f"[red]error:[/red] {exc}")
         raise typer.Exit(1) from exc
+    except asyncio.CancelledError:
+        console.print("[red]interrupted[/red]")
+        raise typer.Exit(143) from None
     _print_job(job)
     raise typer.Exit(0 if job.status in {JobStatus.SUCCEEDED, JobStatus.NEEDS_REVIEW} else 1)
 

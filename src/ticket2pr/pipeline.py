@@ -25,7 +25,16 @@ from ticket2pr.agent.base import AgentTask, CodingAgent
 from ticket2pr.agent.guard import Policy
 from ticket2pr.agent.prompts import read_guidelines
 from ticket2pr.config import Settings
-from ticket2pr.domain import AgentResult, ChangeSet, Job, JobStatus, PullRequest, TestReport, Ticket
+from ticket2pr.domain import (
+    AgentResult,
+    ChangeSet,
+    Job,
+    JobStatus,
+    PullRequest,
+    TestReport,
+    Ticket,
+    Usage,
+)
 from ticket2pr.errors import (
     AgentError,
     ConfigurationError,
@@ -237,22 +246,27 @@ class Pipeline:
                 feedback=feedback,
                 budget_usd=remaining,
             )
-            result = await self._agent.run(task)
+            try:
+                result = await self._agent.run(task)
+            except asyncio.CancelledError:  # no cost report: count the attempt's whole budget
+                job.usage += Usage(cost_usd=remaining, cost_capped=True)
+                raise
             job.usage += result.usage
             denied += result.denied_actions
             self._store.save(job)
             logger.info(
-                "job %s attempt %d: %s (%s)",
+                "job %s attempt %d: %s (%s, session %s)",
                 job.id,
                 attempt,
                 result.outcome,
                 result.usage.cost_label,
+                result.session_id,
             )
             if not result.ok:
                 if completed is None:
-                    raise AgentError(
-                        f"agent stopped: {result.outcome.value}. {result.summary[:300]}"
-                    )
+                    # Not the agent's text: the error reaches the ticket, whose reporter may not
+                    # be allowed to read the repository.
+                    raise AgentError(f"agent stopped: {result.outcome.value}")
                 # Keep the earlier, completed attempt (plus whatever the retry left behind)
                 # and let the tests decide; a failed retry must not throw a draft PR away.
                 completed = completed.model_copy(

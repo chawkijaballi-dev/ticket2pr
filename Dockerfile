@@ -20,7 +20,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /uvx /usr/local/bin/
 RUN useradd --create-home --uid 10001 ticket2pr
-COPY --from=build --chown=ticket2pr:ticket2pr /app /app
+# Root-owned: untrusted code (unsandboxed mode) must not plant a .env or patch the venv.
+COPY --from=build /app /app
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     T2P_DATA_DIR=/data

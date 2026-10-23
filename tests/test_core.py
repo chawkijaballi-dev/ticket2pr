@@ -56,11 +56,6 @@ def test_usage_addition_and_totals() -> None:
     assert (total + Usage(cost_capped=True)).cost_capped is True
 
 
-def test_status_terminality() -> None:
-    assert not JobStatus.RUNNING.terminal
-    assert JobStatus.NEEDS_REVIEW.terminal
-
-
 # ── config ──────────────────────────────────────────────────────────────
 
 
@@ -216,6 +211,11 @@ def test_store_fail_interrupted(memory_store: JobStore) -> None:
         ({"package.json": '{"scripts": {"test": "jest"}}'}, "npm test --silent"),
         ({"package.json": '{"scripts": {}}'}, None),
         ({"package.json": "not json"}, None),
+        ({"package.json": "[1]"}, None),
+        (
+            {"package.json": '{"scripts": {"test": "echo no test specified && exit 1"}}'},
+            None,
+        ),
         ({"pyproject.toml": "", "tests/test_a.py": ""}, "python3 -m pytest -q"),
         ({"setup.cfg": "", "test_x.py": ""}, "python3 -m pytest -q"),
         ({"setup.py": "", "x_test.py": ""}, "python3 -m pytest -q"),
@@ -281,7 +281,11 @@ async def test_run_tests_keep_version_manager_homes(
 
 
 async def test_run_tests_timeout_kills_process_group(tmp_path: Path) -> None:
-    report = await run_tests("sleep 30 & sleep 30", tmp_path, timeout_s=0.3, sandbox=None)
+    report = await run_tests(
+        "sleep 30 & echo $! > bg.pid; sleep 30", tmp_path, timeout_s=0.3, sandbox=None
+    )
+    pid = int((tmp_path / "bg.pid").read_text())
+    assert not Path(f"/proc/{pid}").exists() or "Z" in Path(f"/proc/{pid}/stat").read_text()
     assert not report.passed
     assert report.exit_code is None
     assert "Timed out" in report.output_tail
@@ -352,6 +356,19 @@ def test_pr_body_keeps_agent_text_inert() -> None:
     assert "&lt;img src=x>" in body
     assert "<img" not in body
     assert "- Blocked: `` Bash: a`b ``" in body
+
+
+def test_pr_body_title_cannot_use_a_reference_from_the_summary() -> None:
+    body = render.pr_body(
+        ticket=Ticket(key="PROJ-1", title="Fix ![s][s] <img src=x>"),
+        agent=AgentResult(outcome=AgentOutcome.COMPLETED, summary="Done.\n\n[s]: https://e.test/x"),
+        usage=USAGE,
+        changes=ChangeSet(files=("a.py",)),
+        tests=TestReport(command="pytest", passed=True),
+        model="m",
+    )
+    assert "Fix !\\[s]\\[s] &lt;img src=x>" in body
+    assert "\n\\[s]: https://e.test/x" in body
 
 
 def test_pr_body_without_tests_or_summary() -> None:

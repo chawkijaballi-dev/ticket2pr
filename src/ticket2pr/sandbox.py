@@ -85,6 +85,8 @@ class TestSandbox:
 def hidden_paths(settings: Settings) -> tuple[Path, ...]:
     """Directories untrusted code must not read: the service's home, data and working dirs."""
     hidden = {Path.home(), Path.cwd(), settings.data_dir}
+    if config_dir := os.environ.get("CLAUDE_CONFIG_DIR"):  # where the `claude` login lives
+        hidden.add(Path(config_dir).expanduser().resolve())
     return tuple(sorted(path for path in hidden if path != Path("/")))
 
 

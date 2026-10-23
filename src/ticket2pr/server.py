@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import json
 import logging
+import shutil
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -126,8 +127,12 @@ def start_queue(runtime: Runtime, *, workers: int) -> JobQueue:
     interrupted = runtime.store.fail_interrupted()
     if interrupted:
         logger.warning("marked %d interrupted job(s) as failed", interrupted)
+    # No job runs yet: every workspace left on disk belongs to a run a crash cut short.
+    for stale in runtime.settings.workspaces_dir.glob("job-*"):
+        shutil.rmtree(stale, ignore_errors=True)
     queue = JobQueue(pipeline=runtime.pipeline, store=runtime.store, workers=workers)
     pending = runtime.store.list(limit=10_000, status=JobStatus.QUEUED)
+    resumed = 0
     for job in reversed(pending):  # oldest first
         # The database may have been written by untrusted code (unsandboxed mode): never take
         # a repository from it, re-resolve it from T2P_REPOS when the job runs, and never
@@ -138,8 +143,9 @@ def start_queue(runtime: Runtime, *, workers: int) -> JobQueue:
             continue
         job.repo = None
         queue.enqueue(job)
-    if pending:
-        logger.info("re-enqueued %d queued job(s)", len(pending))
+        resumed += 1
+    if resumed:
+        logger.info("re-enqueued %d queued job(s)", resumed)
     queue.start()
     return queue
 
