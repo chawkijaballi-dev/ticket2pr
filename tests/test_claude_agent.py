@@ -213,6 +213,9 @@ async def test_options_lock_down_the_agent(task: AgentTask) -> None:
     assert options.permission_mode == "dontAsk"
     assert options.setting_sources == []
     assert options.allowed_tools == ALLOWED_TOOLS
+    assert options.tools == ALLOWED_TOOLS  # the whole tool set, not just pre-approvals
+    assert options.mcp_servers == {}
+    assert options.strict_mcp_config is True
     assert "WebFetch" in options.disallowed_tools
     assert options.max_turns == 50
     assert options.max_budget_usd == 1.5  # the task's remaining budget wins when lower
@@ -301,6 +304,18 @@ async def test_guard_hook_denies_and_records(task: AgentTask) -> None:
     assert await hook(_bash_call("pytest"), "t2", CTX) == {}
     stop = cast("HookInput", {"hook_event_name": "Stop"})
     assert await hook(stop, None, CTX) == {}
+
+
+async def test_guard_hook_denies_tools_outside_the_allowlist(task: AgentTask) -> None:
+    query = Recorder(_result())
+    await _agent(query).run(task)
+    hook = _guard(query.calls[0][1])
+    call = cast(
+        "HookInput",
+        {"hook_event_name": "PreToolUse", "tool_name": "Monitor", "tool_input": {"command": "x"}},
+    )
+    denied: dict[str, Any] = dict(await hook(call, "t1", CTX))
+    assert denied["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 async def test_guard_hook_denies_when_the_check_fails(task: AgentTask) -> None:

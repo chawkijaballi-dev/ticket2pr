@@ -15,9 +15,7 @@ ticket2pr opened a pull request: https://github.com/acme/shop/pull/318
 
 Tests pass (python3 -m pytest -q).
 
-- Cost: $0.84
-- Tokens: 412,903
-- Agent turns: 23
+Cost: $0.84
 ```
 
 ticket2pr is a small, auditable harness around the

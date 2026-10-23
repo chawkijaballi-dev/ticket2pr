@@ -170,7 +170,13 @@ class ClaudeAgent:
             effort=self._effort,
             cwd=str(task.workspace),
             system_prompt={"type": "preset", "preset": "claude_code", "append": SYSTEM_PROMPT},
+            # The base tool set itself, not just pre-approvals: Claude Code otherwise also
+            # exposes Monitor (background tasks), cron, remote triggers, ToolSearch...
+            tools=list(ALLOWED_TOOLS),
             allowed_tools=list(ALLOWED_TOOLS),
+            # No MCP server at all, not even the operator's claude.ai connectors.
+            mcp_servers={},
+            strict_mcp_config=True,
             disallowed_tools=list(DISALLOWED_TOOLS),
             # Non-interactive: anything not pre-approved above is denied, never prompted.
             # (With CLAUDE_CODE_SUBPROCESS_ENV_SCRUB, Claude Code forces "default" mode; the
@@ -211,7 +217,11 @@ def _guard_hook(
             return {}
         tool_name = hook_input["tool_name"]
         try:
-            reason = policy.check(tool_name, hook_input["tool_input"])
+            reason = (
+                policy.check(tool_name, hook_input["tool_input"])
+                if tool_name in ALLOWED_TOOLS
+                else f"{tool_name} is not an allowed tool"  # deny by default
+            )
         except Exception:  # the CLI treats a failing hook as no decision: deny instead
             logger.warning("guard error on %s", tool_name, exc_info=True)
             reason = "the guard could not check this call"

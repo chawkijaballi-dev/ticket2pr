@@ -94,7 +94,7 @@ def tracker_comment(
         return (
             # One plain code span (the ADF converter knows no other): links in it stay text.
             f"ticket2pr could not open a pull request: {_code_span(reason.replace('`', "'"))}\n\n"
-            f"Spent {usage.cost_label} over {usage.turns} agent turns."
+            f"Spent {usage.cost_label}."
         )
     pr, tests = published
     kind = "draft pull request" if pr.draft else "pull request"
@@ -107,9 +107,9 @@ def tracker_comment(
     return (
         f"ticket2pr opened a {kind}: [{pr.url}]({pr.url})\n\n"
         f"{status}\n\n"
-        f"- Cost: `{usage.cost_label}`\n"
-        f"- Tokens: `{usage.total_tokens:,}`\n"
-        f"- Agent turns: `{usage.turns}`"
+        # Cost only: tokens and turns are exact numbers the agent can steer, and the ticket's
+        # reporter may not be allowed to read the repository. The PR has the full usage.
+        f"Cost: `{usage.cost_label}`"
     )
 
 
