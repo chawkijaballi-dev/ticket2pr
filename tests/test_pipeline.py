@@ -137,7 +137,7 @@ async def test_agent_error_outcome_fails_job(make_pipeline: MakePipeline, store:
 
 
 async def test_cancelled_attempt_counts_its_whole_budget(
-    make_pipeline: MakePipeline, store: JobStore
+    make_pipeline: MakePipeline, store: JobStore, tickets_dir: Path
 ) -> None:
     class Hanging(ScriptedAgent):
         async def run(self, task: AgentTask) -> AgentResult:
@@ -152,6 +152,7 @@ async def test_cancelled_attempt_counts_its_whole_budget(
     job = store.list()[0]
     assert job.usage.cost_capped
     assert job.usage.cost_usd == pytest.approx(2.0)  # the fixture's max_budget_usd
+    assert "re-add the label" in (tickets_dir / "CALC-1.comments.md").read_text()
 
 
 async def test_protected_path_left_staged_fails_closed(

@@ -20,6 +20,9 @@ All notable changes to this project are documented here. The format follows
   SIGTERM as an interruption; `serve` deletes leftover workspaces at startup, except those kept with `--keep-workspace`
   (by this version: older kept workspaces have no `.keep` marker and are removed);
   git aborts a clone or push stalled under 1 KB/s for 60 s.
+- A gracefully interrupted job tells the ticket to re-add the label.
+- Read-only toolchain paths that contain a hidden directory (such as `$HOME`) are not
+  exposed to the sandboxes.
 - npm's default "no test specified" script is not taken for a test suite.
 - Auto-detected Python tests run `python3 -m pytest -q`; sandboxed tests get `TMPDIR=/tmp`.
 - Sockets, FIFOs and device files left in the workspace are not copied to the publish clone.

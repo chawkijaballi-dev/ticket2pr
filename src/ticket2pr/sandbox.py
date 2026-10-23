@@ -92,7 +92,16 @@ def hidden_paths(settings: Settings) -> tuple[Path, ...]:
 
 def toolchain_paths(settings: Settings) -> tuple[Path, ...]:
     """Directories re-exposed read-only inside hidden ones (interpreters, configured tools)."""
-    return (*_interpreter_roots(), *(path.resolve() for path in settings.sandbox_readonly_paths))
+    candidates = (*_interpreter_roots(), *(p.resolve() for p in settings.sandbox_readonly_paths))
+    hidden = hidden_paths(settings)
+    kept = []
+    for path in candidates:
+        # Mounted after the hidden tmpfs: a path holding a hidden one would re-expose it.
+        if any(secret.is_relative_to(path) for secret in hidden):
+            logger.warning("not exposing %s to the sandbox: it contains a hidden directory", path)
+        else:
+            kept.append(path)
+    return tuple(kept)
 
 
 def sandbox_profile(settings: Settings) -> TestSandbox | None:

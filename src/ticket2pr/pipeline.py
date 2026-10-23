@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -112,6 +113,10 @@ class Pipeline:
             # Shutdown or Ctrl-C: leave a terminal status so the ticket is not blocked forever.
             job.status = JobStatus.FAILED
             job.error = "interrupted before completion"
+            # Best effort, briefly: otherwise the labelled ticket just never hears back.
+            with suppress(TimeoutError):
+                async with asyncio.timeout(10):
+                    await self._report(job, None, f"{job.error}; re-add the label to retry")
             raise
         except Ticket2PRError as exc:
             job.status = JobStatus.FAILED

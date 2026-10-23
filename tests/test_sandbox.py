@@ -27,6 +27,7 @@ from ticket2pr.sandbox import (
     make_process_undumpable,
     missing_sandbox_tools,
     sandbox_profile,
+    toolchain_paths,
 )
 from ticket2pr.verify import run_tests
 
@@ -63,8 +64,9 @@ def test_ensure_sandbox_available(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_profile_follows_settings(settings: Settings, tmp_path: Path) -> None:
     assert sandbox_profile(settings) is None  # the shared fixture disables it
+    tools = tmp_path / "tools"  # tmp_path itself is the (hidden) working directory
     enabled = settings.model_copy(
-        update={"sandbox": True, "test_network": True, "sandbox_readonly_paths": [tmp_path]}
+        update={"sandbox": True, "test_network": True, "sandbox_readonly_paths": [tools]}
     )
     profile = sandbox_profile(enabled)
     assert profile is not None
@@ -72,7 +74,18 @@ def test_profile_follows_settings(settings: Settings, tmp_path: Path) -> None:
     assert Path.home() in profile.hidden
     assert Path("/") not in profile.hidden
     assert Path(sys.prefix) in profile.readonly
-    assert tmp_path.resolve() in profile.readonly
+    assert tools.resolve() in profile.readonly
+
+
+def test_toolchain_paths_never_re_expose_a_hidden_directory(
+    settings: Settings, tmp_path: Path
+) -> None:
+    home_parent = Path.home().parent
+    tools = tmp_path / "tools"
+    exposed = settings.model_copy(update={"sandbox_readonly_paths": [home_parent, tools]})
+    paths = toolchain_paths(exposed)
+    assert home_parent.resolve() not in paths  # would undo the tmpfs over $HOME
+    assert tools.resolve() in paths
 
 
 def test_claude_config_dir_is_hidden(
