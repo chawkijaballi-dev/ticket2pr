@@ -20,6 +20,7 @@ import logging
 import os
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -133,6 +134,30 @@ def remove_git_dir(workspace: Path) -> None:
         shutil.rmtree(path)
     elif path.exists() or path.is_symlink():
         path.unlink()
+
+
+def remove_tree(path: Path) -> None:
+    """Best-effort ``shutil.rmtree`` that also clears read-only directories.
+
+    Untrusted runs leave them (Go's module cache is read-only on purpose), and a plain rmtree
+    gives up on their contents. Symlinks are never followed.
+    """
+
+    def make_writable(_func: object, name: str, exc: BaseException) -> None:
+        if not isinstance(exc, PermissionError):
+            return
+        entry = Path(name)
+        try:
+            entry.parent.chmod(stat.S_IRWXU)
+            if entry.is_dir() and not entry.is_symlink():
+                entry.chmod(stat.S_IRWXU)
+                remove_tree(entry)
+            else:
+                entry.unlink()
+        except OSError:
+            return
+
+    shutil.rmtree(path, onexc=make_writable)
 
 
 def hidden_paths(settings: Settings) -> tuple[Path, ...]:

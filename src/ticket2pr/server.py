@@ -10,7 +10,6 @@ import hashlib
 import hmac
 import json
 import logging
-import shutil
 import time
 from collections import OrderedDict
 from contextlib import asynccontextmanager
@@ -25,6 +24,7 @@ from ticket2pr.domain import Job, JobStatus, is_ticket_key
 from ticket2pr.errors import ConfigurationError
 from ticket2pr.pipeline import KEEP_MARKER
 from ticket2pr.runtime import Runtime, build_runtime
+from ticket2pr.sandbox import remove_tree
 from ticket2pr.worker import JobQueue
 
 if TYPE_CHECKING:
@@ -144,7 +144,7 @@ def start_queue(runtime: Runtime, *, workers: int) -> JobQueue:
     # workspaces kept on purpose (--keep-workspace).
     for stale in runtime.settings.workspaces_dir.glob("job-*"):
         if not (stale / KEEP_MARKER).exists():
-            shutil.rmtree(stale, ignore_errors=True)
+            remove_tree(stale)
     queue = JobQueue(pipeline=runtime.pipeline, store=runtime.store, workers=workers)
     pending = runtime.store.list(limit=10_000, status=JobStatus.QUEUED)
     resumed = 0

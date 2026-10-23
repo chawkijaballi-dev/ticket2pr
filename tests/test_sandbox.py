@@ -29,6 +29,7 @@ from ticket2pr.sandbox import (
     make_process_undumpable,
     missing_sandbox_tools,
     remove_git_dir,
+    remove_tree,
     sandbox_profile,
     toolchain_paths,
 )
@@ -271,6 +272,23 @@ async def test_networked_sandbox_keeps_the_resolver_config(workspace: Path) -> N
         "grep -q nameserver /etc/resolv.conf", workspace, timeout_s=30, sandbox=networked
     )
     assert report.passed, report.output_tail
+
+
+def test_remove_tree_clears_read_only_directories(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep").write_text("x")
+    job = tmp_path / "job"
+    pkg = job / "gomod" / "pkg"
+    pkg.mkdir(parents=True)
+    (pkg / "a.go").write_text("package a\n")
+    (job / "gomod" / "link").symlink_to(outside)
+    for directory in (pkg, pkg.parent):  # what Go does to its module cache
+        directory.chmod(0o555)
+    remove_tree(job)
+    assert not job.exists()
+    assert (outside / "keep").exists()
+    remove_tree(job)  # already gone: no error
 
 
 def test_remove_git_dir_never_follows_a_symlink(tmp_path: Path) -> None:

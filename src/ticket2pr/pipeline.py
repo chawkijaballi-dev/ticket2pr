@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import shutil
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,6 +50,7 @@ from ticket2pr.sandbox import (
     ensure_sandbox_available,
     kill_descendants,
     remove_git_dir,
+    remove_tree,
     sandbox_profile,
 )
 from ticket2pr.scm.git import GitAuth, GitRepo, sync_tree
@@ -154,7 +154,7 @@ class Pipeline:
             if job_dir is not None and options.keep_workspace and job_dir.is_dir():
                 (job_dir / KEEP_MARKER).touch()  # so serve's startup cleanup leaves it alone
             elif job_dir is not None:
-                await asyncio.to_thread(shutil.rmtree, job_dir, ignore_errors=True)
+                await asyncio.to_thread(remove_tree, job_dir)
 
         await self._report(job, outcome, public_error)  # skipped jobs returned above, silently
         return job
@@ -174,7 +174,7 @@ class Pipeline:
         auth = self._host.git_auth()
         # A process left by an earlier unsandboxed job must not watch this job's token.
         await self._reap_untrusted_processes()
-        await asyncio.to_thread(shutil.rmtree, job_dir, ignore_errors=True)  # stale attempt
+        await asyncio.to_thread(remove_tree, job_dir)  # stale attempt
 
         work = await GitRepo.clone(
             clone_url, job_dir / "work", branch=settings.base_branch, auth=auth
