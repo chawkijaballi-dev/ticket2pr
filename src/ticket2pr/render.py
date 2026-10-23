@@ -15,6 +15,10 @@ _FENCE = re.compile(r"`{3,}|~{3,}")
 # @user, @org/team, #123, owner/repo#45 and "Fixes #12": a zero-width space after @ or #
 # keeps the text readable but stops mentions, cross-references and closing keywords.
 _REFERENCE = re.compile(r"([@#])(?=[\w/-])")
+# GitHub also honours "Fixes https://github.com/o/r/issues/7": break the keyword itself.
+_CLOSING_KEYWORD = re.compile(
+    r"\b(?=(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+https?://)(\w)", re.IGNORECASE
+)
 
 
 def commit_message(ticket: Ticket) -> str:
@@ -144,6 +148,7 @@ def _inert(markdown: str) -> str:
 
 
 def _no_references(text: str) -> str:
+    text = _CLOSING_KEYWORD.sub("\\1\u200b", text)
     return _REFERENCE.sub("\\1\u200b", text)
 
 

@@ -339,6 +339,8 @@ def test_commit_message_and_title() -> None:
     for text in (render.commit_message(closing), render.pr_title(closing)):
         assert "#\u200b42" in text
         assert "@\u200bbob" in text
+    url = render.pr_title(Ticket(key="PROJ-1", title="Fixes https://github.com/a/b/issues/7"))
+    assert "F\u200bixes https://github.com/a/b/issues/7" in url
 
 
 def test_pr_body_contents() -> None:

@@ -311,6 +311,9 @@ async def test_agent_budget_caps_task_budget(task: AgentTask) -> None:
     big = AgentTask(ticket=task.ticket, workspace=task.workspace, budget_usd=99.0)
     await _agent(query).run(big)
     assert query.calls[0][1].max_budget_usd == 3.0
+    spent = AgentTask(ticket=task.ticket, workspace=task.workspace, budget_usd=0.0)
+    await _agent(query).run(spent)
+    assert query.calls[1][1].max_budget_usd == 0.0  # not the full budget again
 
 
 def _bash_call(command: str) -> HookInput:

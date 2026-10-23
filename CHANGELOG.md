@@ -65,6 +65,8 @@ All notable changes to this project are documented here. The format follows
   the agent's escaped text), and agent text is masked before escaping too, which could split
   a secret containing `#`, `@` or `[`. The commit message and PR title neutralise `#123` and
   `@user` references like the body.
+- Closing keywords followed by an issue URL (`Fixes https://github.com/o/r/issues/7`) are
+  neutralised too.
 - A configured secret in the ticket title is masked in the commit message and PR title too.
 - The agent's Bash sandbox also denies `/run/user` and `/run/dbus` (host IPC sockets), as the
   test sandbox already did.

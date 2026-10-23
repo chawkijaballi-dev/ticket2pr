@@ -86,7 +86,8 @@ class ClaudeAgent:
     async def run(self, task: AgentTask) -> AgentResult:
         if self._sandbox:
             ensure_sandbox_available()
-        budget = min(self._max_budget_usd, task.budget_usd or self._max_budget_usd)
+        requested = self._max_budget_usd if task.budget_usd is None else task.budget_usd
+        budget = max(0.0, min(self._max_budget_usd, requested))  # 0 means spent, not unset
         policy = Policy(workspace=task.workspace, protected_globs=self._protected_globs)
         options = self.build_options(task, policy, budget)
         started = time.monotonic()
