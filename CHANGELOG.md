@@ -49,7 +49,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
-- Without the sandbox, leftover processes are frozen then killed until none is left; a job
+- Without the sandbox, leftover processes (including a "zombie" whose other threads still run)
+  are frozen then killed until none is left, never blocking past the deadline; a job
   refuses to publish if any survives. The eval harness ignores the developer's git config.
 - ticket2pr's git ignores the per-user excludes file (`~/.config/git/ignore`).
 - Literal git pathspecs, so protected paths such as `:x/.env` are never committed.

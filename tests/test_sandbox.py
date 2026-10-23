@@ -376,6 +376,30 @@ def test_subreaper_kills_a_process_that_keeps_reforking() -> None:
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux prctl")
+def test_subreaper_kills_a_process_whose_leader_thread_exited() -> None:
+    """Its main thread gone, /proc shows a zombie, yet another thread still runs."""
+    script = (
+        "import ctypes, os, sys, threading, time\n"
+        "from ticket2pr.sandbox import become_subreaper, kill_descendants\n"
+        "become_subreaper()\n"
+        "pid = os.fork()\n"
+        "if pid == 0:\n"
+        "    threading.Thread(target=time.sleep, args=(60,)).start()\n"
+        "    ctypes.CDLL(None).pthread_exit(None)\n"
+        "time.sleep(0.5)\n"
+        "start = time.monotonic()\n"
+        "assert kill_descendants(deadline_s=5) == 1\n"
+        "assert time.monotonic() - start < 5\n"
+        "try:\n"
+        "    os.kill(pid, 0)\n"
+        "except ProcessLookupError:\n"
+        "    sys.exit(0)\n"
+        "sys.exit(1)\n"
+    )
+    assert subprocess.run([sys.executable, "-c", script], check=False, timeout=60).returncode == 0
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux prctl")
 def test_survivors_refuse_publishing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("ticket2pr.sandbox._descendants", lambda _root: [(999_999, "R")])
     monkeypatch.setattr("ticket2pr.sandbox.os.kill", lambda *_args: None)  # never a real pid

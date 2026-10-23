@@ -209,7 +209,7 @@ def kill_descendants(root: int | None = None, *, deadline_s: float = 10.0) -> in
     killed: set[int] = set()
     deadline = time.monotonic() + deadline_s
     while targets := _descendants(root):
-        live = [pid for pid, state in targets if state != "Z"]  # zombies only need reaping
+        live = [pid for pid, state in targets if _alive(pid, state)]
         if time.monotonic() > deadline:
             if live:
                 raise PolicyViolationError(
@@ -217,16 +217,29 @@ def kill_descendants(root: int | None = None, *, deadline_s: float = 10.0) -> in
                     "publishing (restart the worker if this persists)"
                 )
             break  # zombies another descendant still has to reap: harmless
+        # Every pid, zombies included: a "zombie" leader whose other threads still run dies
+        # with its whole process; signalling a true zombie does nothing.
         for sig in (signal.SIGSTOP, signal.SIGKILL):
-            for pid in live:
+            for pid, _state in targets:
                 with suppress(ProcessLookupError, PermissionError):
                     os.kill(pid, sig)
         killed.update(live)
-        # Reap them: as their (sub)reaper we are the parent, so waitpid works.
+        # Reap them (as their (sub)reaper we are the parent), never blocking past the deadline.
         for pid, _state in targets:
             with suppress(ChildProcessError, OSError):
-                os.waitpid(pid, 0)
+                os.waitpid(pid, os.WNOHANG)
+        time.sleep(0.01)
     return len(killed)
+
+
+def _alive(pid: int, state: str) -> bool:
+    """Not a zombie, or a zombie thread-group leader whose other threads still run."""
+    if state != "Z":
+        return True
+    try:
+        return sum(1 for _ in Path(f"/proc/{pid}/task").iterdir()) > 1
+    except OSError:
+        return False
 
 
 def _descendants(root: int) -> list[tuple[int, str]]:
