@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Branches are named `ticket2pr/<key>` (no title slug), so a re-run after a title edit
+  updates the existing PR.
+- `registry.npmjs.org` is no longer in the default `T2P_NETWORK_ALLOWLIST` (it accepts
+  `npm publish`); add it explicitly for JavaScript repositories.
+- Test runs judge the shell's exit code and kill whatever the suite left running; without
+  the sandbox, each run gets a fresh `HOME` and `TMPDIR`.
+
+### Security
+
+- Literal git pathspecs, so protected paths such as `:x/.env` are never committed.
+- The guard expands `~/` before confining file tools to the workspace.
+- The changed files are size-capped before the in-memory secret scan.
+
 ## [0.1.0] - 2026-10-22
 
 ### Added

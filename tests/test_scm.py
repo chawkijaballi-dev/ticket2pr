@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import socket
 from pathlib import Path
 
 import httpx
@@ -9,7 +11,7 @@ import pytest
 import respx
 
 from conftest import REPO, git
-from ticket2pr.errors import ConfigurationError, SCMError
+from ticket2pr.errors import ConfigurationError, PolicyViolationError, SCMError
 from ticket2pr.scm import GitAuth, GitHubClient, GitHubHost, GitRepo, LocalHost, RepoHost
 from ticket2pr.scm.git import sync_tree
 
@@ -64,7 +66,30 @@ async def test_staged_diff_includes_binary_content(repos_dir: Path, tmp_path: Pa
     repo = await GitRepo.clone((repos_dir / REPO).as_uri(), tmp_path / "ws", branch="main")
     (repo.path / "blob.bin").write_bytes(b"\x00\x01needle\x02")
     await repo.stage_all()
-    assert b"needle" in await repo.staged_diff()
+    assert b"needle" in await repo.staged_diff(max_bytes=1_000_000)
+    with pytest.raises(PolicyViolationError, match="exceeds 10 bytes"):
+        await repo.staged_diff(max_bytes=10)
+
+
+async def test_undecodable_names_round_trip(repos_dir: Path, tmp_path: Path) -> None:
+    repo = await GitRepo.clone((repos_dir / REPO).as_uri(), tmp_path / "ws", branch="main")
+    name = os.fsdecode(b"x\xff.pem")
+    (repo.path / name).write_text("key\n")
+    assert (await repo.stage_all()).files == (name,)
+    await repo.unstage([name])
+    assert (await repo.staged_changes()).empty
+
+
+def test_sync_tree_drops_special_files(tmp_path: Path) -> None:
+    source, dest = tmp_path / "src", tmp_path / "dest"
+    source.mkdir()
+    dest.mkdir()
+    (source / "a.txt").write_text("a\n")
+    os.mkfifo(source / "fifo")
+    with socket.socket(socket.AF_UNIX) as server:
+        server.bind(str(source / "test.sock"))
+        sync_tree(source, dest)
+    assert sorted(path.name for path in dest.iterdir()) == ["a.txt"]
 
 
 async def test_global_config_is_ignored(

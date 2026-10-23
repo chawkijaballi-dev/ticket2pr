@@ -2,7 +2,7 @@
 
 The tests execute code the agent just wrote. They run in the bubblewrap sandbox described in
 ``ticket2pr.sandbox``, with a minimal environment (no credentials), in their own process
-group, and are killed with the whole group on timeout.
+group; the whole group is killed when the run ends, so nothing they start outlives it.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ _TAIL_BYTES = 4 * _TAIL_CHARS  # UTF-8: at most 4 bytes per character
 _DRAIN_TIMEOUT_S = 5.0
 # Not VIRTUAL_ENV: it would point tools such as `poetry run` at ticket2pr's own virtualenv.
 _ENV_PASSTHROUGH = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "UV_CACHE_DIR")
+_TOOLCHAIN_HOMES = {"RUSTUP_HOME": ".rustup", "CARGO_HOME": ".cargo", "PYENV_ROOT": ".pyenv"}
 
 
 def detect_test_command(workspace: Path) -> str | None:
@@ -69,6 +70,7 @@ async def run_tests(
         return TestReport(command=None, passed=False, output_tail="No test command detected.")
 
     env = {key: os.environ[key] for key in _ENV_PASSTHROUGH if key in os.environ}
+    env |= _toolchain_homes()
     env["PATH"] = _without_worker_venv(env.get("PATH", os.defpath))
     env["CI"] = "true"
     # No bytecode caches: they would end up in the commit, and a stale .pyc (same size, same
@@ -132,6 +134,17 @@ async def _execute(
         output_tail=text[-_TAIL_CHARS:],
         duration_s=time.monotonic() - started,
     )
+
+
+def _toolchain_homes() -> dict[str, str]:
+    """Where version managers keep their toolchains: they default to $HOME paths, and the
+    tests may run with another (empty, or fresh) $HOME."""
+    found = {}
+    for name, default in _TOOLCHAIN_HOMES.items():
+        location = os.environ.get(name) or str(Path.home() / default)
+        if Path(location).is_dir():
+            found[name] = location
+    return found
 
 
 def _without_worker_venv(path: str) -> str:

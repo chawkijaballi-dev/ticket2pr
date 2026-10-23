@@ -214,8 +214,13 @@ def test_undumpable_process_hides_its_environment_from_children() -> None:
     assert subprocess.run([sys.executable, "-c", script], env=env, check=False).returncode == 0
 
 
-def test_undumpable_is_a_noop_elsewhere(monkeypatch: pytest.MonkeyPatch) -> None:
+def _forbid_libc(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("ticket2pr.sandbox.ctypes.CDLL", lambda *_a, **_k: pytest.fail("prctl"))
+
+
+def test_undumpable_is_a_noop_elsewhere(monkeypatch: pytest.MonkeyPatch) -> None:
+    _forbid_libc(monkeypatch)
     make_process_undumpable()
 
 
@@ -310,7 +315,7 @@ def test_hardening_only_becomes_a_subreaper_without_the_sandbox(
 
 
 def test_kill_descendants_is_a_noop_elsewhere(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("sys.platform", "darwin")
+    _forbid_libc(monkeypatch)
     assert kill_descendants() == 0
     become_subreaper()
 

@@ -83,7 +83,8 @@ def test_unbalanced_quotes_fall_back_to_plain_split(policy: Policy) -> None:
         ("Read", "/etc/passwd", True),
         ("Read", "../outside.txt", True),
         ("Read", "~/.claude/.credentials.json", True),
-        ("Write", "~root/x", True),
+        ("Write", "~/x", True),
+        ("Write", "~nosuchuser/x", False),  # a relative name, not expanded
         ("Glob", ".git", True),
         ("Read", ".git/config", True),
         ("Grep", "src", False),

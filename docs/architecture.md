@@ -71,5 +71,6 @@ the failing output (tail) is passed back as feedback.
   `open_or_update_pr`, `aclose`).
 - **Another agent**: implement `CodingAgent.run(task) -> AgentResult`. The pipeline's
   guardrails (git hygiene, protected paths, tests, budget accounting) apply unchanged.
-- **A distributed queue**: replace `JobQueue.submit` with an enqueue to Arq/RQ/Celery and run
+- **A distributed queue**: replace `JobQueue`'s `submit`/`enqueue`/`start`/`stop` (restart
+  recovery calls `enqueue` directly) with Arq/RQ/Celery and run
   `Pipeline.run` in the consumer; `JobStore` would move to Postgres.

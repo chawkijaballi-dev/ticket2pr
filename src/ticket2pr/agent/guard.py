@@ -57,7 +57,8 @@ class Policy:
 
     def _check_path(self, raw: str, *, write: bool) -> str | None:
         root = self.workspace.resolve()
-        path = Path(raw).expanduser()  # Claude Code expands ~/ itself
+        # Claude Code expands a leading ~/ itself (not ~user/, which stays a relative name).
+        path = Path.home() / raw[2:] if raw == "~" or raw.startswith("~/") else Path(raw)
         candidate = path if path.is_absolute() else root / path
         resolved = candidate.resolve()
         if not resolved.is_relative_to(root):

@@ -19,12 +19,13 @@ import asyncio
 import base64
 import os
 import shutil
+import stat
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
 from ticket2pr.domain import ChangeSet
-from ticket2pr.errors import SCMError
+from ticket2pr.errors import PolicyViolationError, SCMError
 
 _SAFE_CONFIG = (
     "-c", "core.hooksPath=/dev/null",
@@ -99,7 +100,10 @@ class GitRepo:
 
     async def staged_changes(self) -> ChangeSet:
         # -z: paths are NUL-terminated and never quoted or escaped, whatever they contain.
-        numstat = await self._run("diff", "--cached", "--numstat", "--no-renames", "-z")
+        # fsdecode: a non-UTF-8 name must round-trip to git and the filesystem unchanged.
+        numstat = os.fsdecode(
+            await _git_bytes(self.path, "diff", ["--cached", "--numstat", "--no-renames", "-z"])
+        )
         files: list[str] = []
         insertions = deletions = 0
         for record in numstat.split("\0"):
@@ -112,10 +116,16 @@ class GitRepo:
             deletions += int(removed) if removed.isdigit() else 0
         return ChangeSet(files=tuple(files), insertions=insertions, deletions=deletions)
 
-    async def staged_diff(self) -> bytes:
-        """The staged change as raw bytes, binary files included (``--text``), for scanning."""
+    async def staged_diff(self, max_bytes: int) -> bytes:
+        """The staged change as raw bytes, binary files included (``--text``), for scanning.
+
+        Raises ``PolicyViolationError`` past ``max_bytes`` rather than buffer a huge diff.
+        """
         return await _git_bytes(
-            self.path, "diff", ["--cached", "--text", "--no-color", "--no-ext-diff"]
+            self.path,
+            "diff",
+            ["--cached", "--text", "--no-color", "--no-ext-diff"],
+            max_bytes=max_bytes,
         )
 
     def exclude(self, *patterns: str) -> None:
@@ -158,8 +168,9 @@ class GitRepo:
 def sync_tree(source: Path, dest: Path) -> None:
     """Make ``dest``'s working tree (not its ``.git``) an exact copy of ``source``'s.
 
-    Symlinks are copied as links, never followed, and any ``.git`` entry at any depth is
-    skipped, so nothing from the agent's git metadata reaches the publish clone.
+    Symlinks are copied as links, never followed, special files are dropped, and any
+    ``.git`` entry at any depth is skipped, so nothing from the agent's git metadata
+    reaches the publish clone.
     """
     for entry in dest.iterdir():
         if entry.name == ".git":
@@ -173,8 +184,19 @@ def sync_tree(source: Path, dest: Path) -> None:
         dest,
         symlinks=True,
         dirs_exist_ok=True,
-        ignore=lambda _dir, names: [name for name in names if name == ".git"],
+        ignore=_not_publishable,
     )
+
+
+def _not_publishable(directory: str, names: list[str]) -> list[str]:
+    """``.git`` entries, and sockets/FIFOs/devices a test run left behind (git ignores them)."""
+    kinds = (stat.S_ISREG, stat.S_ISDIR, stat.S_ISLNK)
+    return [
+        name
+        for name in names
+        if name == ".git"
+        or not any(is_kind((Path(directory) / name).lstat().st_mode) for is_kind in kinds)
+    ]
 
 
 async def _git(
@@ -184,7 +206,12 @@ async def _git(
 
 
 async def _git_bytes(
-    cwd: Path, command: str, args: list[str], *, env: dict[str, str] | None = None
+    cwd: Path,
+    command: str,
+    args: list[str],
+    *,
+    env: dict[str, str] | None = None,
+    max_bytes: int | None = None,
 ) -> bytes:
     full_env = {
         **os.environ,
@@ -209,9 +236,12 @@ async def _git_bytes(
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        stdout, stderr = await process.communicate()
-    except asyncio.CancelledError:
-        # Do not leave an orphaned git process (and its pipes) behind on shutdown.
+        if max_bytes is None:
+            stdout, stderr = await process.communicate()
+        else:
+            stdout, stderr = await _communicate_bounded(process, command, max_bytes)
+    except (asyncio.CancelledError, PolicyViolationError):
+        # Do not leave an orphaned git process (and its pipes) behind.
         with suppress(ProcessLookupError):
             process.kill()
         await process.wait()
@@ -221,3 +251,18 @@ async def _git_bytes(
         message = stderr.decode("utf-8", "replace").strip()
         raise SCMError(f"git {command} failed ({process.returncode}): {message}")
     return stdout
+
+
+async def _communicate_bounded(
+    process: asyncio.subprocess.Process, command: str, max_bytes: int
+) -> tuple[bytes, bytes]:
+    assert process.stdout is not None  # noqa: S101 - PIPE
+    assert process.stderr is not None  # noqa: S101
+    stderr = asyncio.create_task(process.stderr.read())
+    try:
+        await process.stdout.readexactly(max_bytes + 1)
+    except asyncio.IncompleteReadError as exc:  # EOF within the limit
+        await process.wait()
+        return exc.partial, await stderr
+    stderr.cancel()
+    raise PolicyViolationError(f"git {command} output exceeds {max_bytes} bytes")

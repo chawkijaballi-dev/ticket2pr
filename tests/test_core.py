@@ -257,6 +257,17 @@ async def test_unsandboxed_runs_get_a_fresh_home(tmp_path: Path) -> None:
     assert report.output_tail == "1\n"
 
 
+async def test_run_tests_keep_version_manager_homes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUSTUP_HOME", str(tmp_path))
+    monkeypatch.setenv("CARGO_HOME", str(tmp_path / "missing"))
+    report = await run_tests(
+        'echo "$RUSTUP_HOME|$CARGO_HOME"', tmp_path, timeout_s=10, sandbox=None
+    )
+    assert report.output_tail == f"{tmp_path}|\n"
+
+
 async def test_run_tests_timeout_kills_process_group(tmp_path: Path) -> None:
     report = await run_tests("sleep 30 & sleep 30", tmp_path, timeout_s=0.3, sandbox=None)
     assert not report.passed

@@ -198,10 +198,24 @@ async def test_oversized_change_is_a_policy_violation(
         fix_add(task)
         (task.workspace / "blob.bin").write_bytes(b"x" * 2_000)
 
-    monkeypatch.setattr("ticket2pr.pipeline._MAX_CHANGE_BYTES", 1_000)
+    monkeypatch.setattr("ticket2pr.pipeline._MAX_DIFF_BYTES", 1_000)
     job = await make_pipeline(ScriptedAgent([bloat])).run(claim(store, "CALC-1"))
     assert job.status is JobStatus.FAILED
-    assert "limit 1000" in (job.error or "")
+    assert "exceeds 1000 bytes" in (job.error or "")
+
+
+async def test_undecodable_file_names_are_refused(
+    make_pipeline: MakePipeline, store: JobStore
+) -> None:
+    def mangle(task: AgentTask) -> None:
+        fix_add(task)
+        (task.workspace / os.fsdecode(b"\xff")).mkdir()
+        (task.workspace / os.fsdecode(b"\xff") / ".env").write_text("SECRET=1\n")
+
+    job = await make_pipeline(ScriptedAgent([mangle])).run(claim(store, "CALC-1"))
+    assert job.status is JobStatus.FAILED
+    assert job.pr_url is None
+    assert "not valid UTF-8" in (job.error or "")
 
 
 async def test_unlabelled_ticket_is_skipped_without_comment(

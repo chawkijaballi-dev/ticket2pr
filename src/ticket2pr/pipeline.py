@@ -44,7 +44,7 @@ from ticket2pr.verify import detect_test_command, run_tests
 logger = logging.getLogger(__name__)
 
 _MIN_RETRY_BUDGET_USD = 0.25
-_MAX_CHANGE_BYTES = 20 * 1024 * 1024
+_MAX_DIFF_BYTES = 20 * 1024 * 1024  # the secret scan holds the whole diff in memory
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,10 +284,15 @@ class Pipeline:
     async def _stage(self, repo: GitRepo) -> tuple[ChangeSet, tuple[str, ...]]:
         policy = Policy(workspace=repo.path, protected_globs=tuple(self._settings.protected_paths))
         changes = await repo.stage_all()
+        if not all(_is_utf8(path) for path in changes.files):
+            raise PolicyViolationError("a changed file name is not valid UTF-8")
         excluded = tuple(path for path in changes.files if policy.is_protected(path))
         if excluded:
             await repo.unstage(list(excluded))
             changes = await repo.staged_changes()
+            # Fail closed: whatever the unstage missed must not be pushed.
+            if any(policy.is_protected(path) for path in changes.files):
+                raise PolicyViolationError("a protected path could not be unstaged")
         if changes.empty:
             raise AgentError("the agent finished without changing any file")
         if len(changes.files) > self._settings.max_changed_files:
@@ -295,16 +300,7 @@ class Pipeline:
                 f"the change touches {len(changes.files)} files "
                 f"(limit {self._settings.max_changed_files})"
             )
-        size = sum(
-            path.lstat().st_size
-            for path in (repo.path / name for name in changes.files)
-            if path.is_file() or path.is_symlink()
-        )
-        if size > _MAX_CHANGE_BYTES:  # the secret scan below holds the whole diff in memory
-            raise PolicyViolationError(
-                f"the changed files total {size} bytes (limit {_MAX_CHANGE_BYTES})"
-            )
-        if self._redactor.contains_secret(await repo.staged_diff()):
+        if self._redactor.contains_secret(await repo.staged_diff(_MAX_DIFF_BYTES)):
             raise PolicyViolationError("the change contains a configured secret; not pushing it")
         return changes, excluded
 
@@ -318,3 +314,12 @@ class Pipeline:
             await self._tracker.comment(job.ticket_key, self._redactor.redact(comment))
         except Exception:  # the job's outcome is already recorded; a comment is best effort
             logger.warning("could not comment on %s", job.ticket_key, exc_info=True)
+
+
+def _is_utf8(name: str) -> bool:
+    """False for names git reported with undecodable bytes (kept as surrogate escapes)."""
+    try:
+        name.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
