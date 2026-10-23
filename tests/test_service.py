@@ -54,7 +54,8 @@ def test_verify_signature() -> None:
     body = b'{"a":1}'
     assert verify_signature(SECRET.encode(), body, _sign(body))
     assert not verify_signature(SECRET.encode(), body, _sign(b"other"))
-    assert not verify_signature(SECRET.encode(), body, None)
+    assert not verify_signature(SECRET.encode(), body, "md5=abc")
+    assert not verify_signature(SECRET.encode(), body, "sha256=é")  # junk is a 401, not a 500
     assert not verify_signature(SECRET.encode(), body, "md5=abc")
 
 
