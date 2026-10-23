@@ -32,7 +32,7 @@ USER ticket2pr
 WORKDIR /app
 VOLUME ["/data"]
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=3s \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"
+# No HEALTHCHECK: it would exec a process with every secret in its environment, readable from
+# /proc by unsandboxed tests. Probe GET /healthz from outside (e.g. a Kubernetes httpGet probe).
 ENTRYPOINT ["ticket2pr"]
 CMD ["serve", "--host", "0.0.0.0", "--port", "8080"]

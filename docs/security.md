@@ -24,7 +24,7 @@ layers above it can fail.
 | Ticket fenced as untrusted data in the prompt; the rules are restated after every untrusted block | `agent/prompts.py` | T1 |
 | Tool allowlist (`Read`, `Write`, `Edit`, `Glob`, `Grep`, `Bash`); it is the agent's whole tool set (`tools`), so no web tools, sub-agents, background `Monitor`, cron or remote triggers exist for it; no MCP server, not even the operator's claude.ai connectors (`strict_mcp_config`); the guard denies any other tool name by default | `agent/claude.py` | T1, T2 |
 | `setting_sources=[]`: no user/project/local settings, so no repository hooks or permissions | `agent/claude.py` | T3 |
-| ticket2pr's secrets blanked in the agent's environment, and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` so Claude Code strips its own credentials (`ANTHROPIC_API_KEY`, …) from every command the agent runs | `config.py`, `agent/claude.py` | T2 |
+| ticket2pr's secrets blanked in the agent's environment, and, with the sandbox, `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` so Claude Code strips its own credentials (`ANTHROPIC_API_KEY`, …) from every command the agent runs (without the sandbox they are reachable, see deployment guidance) | `config.py`, `agent/claude.py` | T2 |
 | Agent's Bash in Claude Code's bubblewrap sandbox with a network allowlist, no unsandboxed escape, and `failIfUnavailable` (the CLI refuses to start rather than run Bash unsandboxed) | `agent/claude.py` | T2, T3 |
 | Agent reads confined to the workspace: the sandbox's `filesystem.denyRead` hides the service's home, data and working directories (other jobs, the job database, `.env`, the `claude` login, `CLAUDE_CONFIG_DIR` included) and re-opens only the workspace and toolchains; `permissions.blockReadsOutsideWorkingDirectories` refuses outside reads for the file tools and the Bash commands Claude Code can analyse | `agent/claude.py`, `sandbox.py` | T2 |
 | Repository tests in ticket2pr's bubblewrap sandbox: fresh PID namespace (no other process's `/proc/<pid>/environ`), no network unless `T2P_TEST_NETWORK`, read-only root, writable workspace and private `/tmp` only, an empty `/run` (no host IPC sockets such as the systemd/D-Bus user bus, which would otherwise let `systemd-run --user` start a process outside the sandbox; with `T2P_TEST_NETWORK`, only the resolver config is bound back, read-only), the service's home, data and working directories hidden, minimal environment, own process group, hard timeout | `sandbox.py`, `verify.py` | T2, T3 |
@@ -37,7 +37,7 @@ layers above it can fail.
 | Protected paths unstaged before commit and listed on the PR; paths parsed NUL-separated so unusual names cannot slip through | `pipeline.py`, `scm/git.py` | T5 |
 | A staged change containing any configured secret is refused; secrets are masked in PR bodies, ticket comments, job errors and the feedback given to the agent | `redaction.py`, `pipeline.py` | T2, T5 |
 | Agent-written text and the ticket title are inert in the PR body (no images, raw HTML, fenced blocks, `[]` links, @mentions or #references: GitHub fetches images, and renders some fenced blocks with remote content, for every viewer; bare URLs still autolink and need a click), and the agent's summary comes last so it cannot hide or fake ticket2pr's sections; ticket comments carry no agent text or git/OS error output, only outcomes ticket2pr words itself and the cost (tokens and turns stay in the PR: exact numbers the agent could steer) | `render.py`, `pipeline.py` | T1, T5 |
-| Each job's Claude Code gets its own temp directory (`CLAUDE_CODE_TMPDIR`, deleted with the job); the shared `/tmp/claude` is denied to its Bash sandbox | `agent/claude.py` | T2 |
+| Each job's Claude Code gets its own temp directory (`CLAUDE_CODE_TMPDIR`, deleted with the job); the shared `/tmp/claude` and `/tmp/claude-<uid>` (other Claude Code sessions' task outputs) are denied to its Bash sandbox | `agent/claude.py` | T2 |
 | Per-ticket dollar budget shared across retries (a timed-out or interrupted run counts as its whole budget), turn cap, wall-clock timeout, changed-files cap | `config.py`, `agent/claude.py`, `pipeline.py` | T6 |
 | HMAC-SHA256 webhook signature (constant-time compare), body size limit enforced while reading, label-added trigger, replays refused (a triggering body already received, remembered per process; events older than an hour), idempotent claims | `server.py`, `store.py` | T7, T6 |
 | Bearer token for the jobs API; endpoint disabled when unset | `server.py` | information disclosure |
@@ -107,6 +107,10 @@ Residual risks:
     `RUSTUP_HOME`, `CARGO_HOME` or `PYENV_ROOT` (writable toolchains): a job could leave
     files that a later agent or test run picks up. Restart the container between tickets from different trust domains, or keep
     `T2P_SANDBOX=true`;
+  - never exec into the running container (`docker exec`, exec-based health checks): such a
+    process carries the container's whole environment, secrets included, and is not
+    protected from the tests; probe `GET /healthz` over HTTP instead (the image ships no
+    `HEALTHCHECK` for that reason);
   - keep the compose resource limits (`pids_limit`, `mem_limit`, `cpus`): unsandboxed tests
     share the container's limits until their timeout kills them;
   - or grant the container what bubblewrap needs (user namespaces, e.g. a seccomp profile

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
@@ -32,7 +33,8 @@ from ticket2pr.domain import AgentOutcome, AgentResult, Usage
 from ticket2pr.sandbox import ensure_sandbox_available
 
 logger = logging.getLogger(__name__)
-_SHARED_TMP = "/tmp/claude"  # noqa: S108 - Claude Code's default, shared by every session
+# Claude Code's shared temp dirs: /tmp/claude-<uid> since CLI 2.1.309, /tmp/claude before.
+_SHARED_TMP = ["/tmp/claude", f"/tmp/claude-{os.getuid()}"]  # noqa: S108
 
 # Built-in tools the agent may use. Web access and sub-agents are left out: the ticket and the
 # repository are the whole context, and fewer tools means fewer ways to exfiltrate data.
@@ -151,14 +153,14 @@ class ClaudeAgent:
                 # Bash reads are deny-listed: hide the service's home and data (other jobs,
                 # the job database, credentials), then re-open the workspace and toolchains.
                 "filesystem": {
-                    "denyRead": [*(str(path) for path in self._read_denied), _SHARED_TMP],
+                    "denyRead": [*(str(path) for path in self._read_denied), *_SHARED_TMP],
                     "allowRead": [
                         str(workspace),
                         str(agent_tmp),
                         *(str(p) for p in self._read_allowed),
                     ],
                     "allowWrite": [str(agent_tmp)],
-                    "denyWrite": [_SHARED_TMP],
+                    "denyWrite": _SHARED_TMP,
                 },
             },
         )
@@ -192,11 +194,14 @@ class ClaudeAgent:
             hooks={"PreToolUse": [HookMatcher(hooks=[_guard_hook(policy)])]},
             # Blank ticket2pr's own secrets, and have Claude Code strip its credentials
             # (ANTHROPIC_API_KEY, ...) from the environment of every command the agent runs.
+            # The scrub also makes Claude Code require its sandbox (Bash is refused without
+            # it), so it only comes with the sandbox: unsandboxed, the container is the
+            # boundary and Claude Code's credentials are reachable anyway (docs/security.md).
             # PYTHONDONTWRITEBYTECODE keeps the agent's own test runs from leaving caches behind.
             env={
                 **dict.fromkeys(secret_env_names(), ""),
                 **({"ANTHROPIC_API_KEY": self._api_key} if self._api_key else {}),
-                "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
+                **({"CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"} if self._sandbox else {}),
                 "CLAUDE_CODE_TMPDIR": str(agent_tmp),
                 # No background shells, not even a timed-out command moved to the background:
                 # a process alive while a file tool acts could race the guard (guard.py).

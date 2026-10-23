@@ -61,7 +61,12 @@ All notable changes to this project are documented here. The format follows
 - Secret variables are hidden from the agent whatever the case of their names.
 - Images and raw HTML in the agent's summary are escaped in PR bodies; errors in ticket
   comments are a single code span.
-- Each job gets its own Claude Code temp directory instead of the shared `/tmp/claude`.
+- Each job gets its own Claude Code temp directory; the shared `/tmp/claude` and
+  `/tmp/claude-<uid>` are denied.
+- The image no longer ships an exec-based `HEALTHCHECK` (it exposed every secret to
+  unsandboxed tests); probe `/healthz` over HTTP.
+- Without the sandbox, the agent's Bash works again (Claude Code's env scrub, which demands
+  its sandbox, is only set with it).
 - Jobs re-enqueued at startup are failed when their ticket key is invalid.
 - Eval reports mark capped costs (a timed-out task counts its budget) as upper bounds.
 - Webhook replays are refused: a triggering body already received, or an event older than an

@@ -233,10 +233,10 @@ async def test_options_lock_down_the_agent(task: AgentTask) -> None:
     assert sandbox["failIfUnavailable"] is True
     agent_tmp = task.workspace.resolve().parent / "agent-tmp"  # per job, not /tmp/claude
     assert sandbox["filesystem"] == {
-        "denyRead": ["/home/svc", "/srv/t2p", "/tmp/claude"],
+        "denyRead": ["/home/svc", "/srv/t2p", "/tmp/claude", f"/tmp/claude-{os.getuid()}"],
         "allowRead": [str(task.workspace.resolve()), str(agent_tmp), "/opt/python"],
         "allowWrite": [str(agent_tmp)],
-        "denyWrite": ["/tmp/claude"],
+        "denyWrite": ["/tmp/claude", f"/tmp/claude-{os.getuid()}"],
     }
     assert agent_tmp.is_dir()
     assert options.env["CLAUDE_CODE_TMPDIR"] == str(agent_tmp)
@@ -264,9 +264,11 @@ def test_every_secret_setting_is_hidden_from_the_agent() -> None:
 async def test_bash_sandbox_can_be_disabled(task: AgentTask) -> None:
     query = Recorder(_result())
     await _agent(query, sandbox=False).run(task)
-    sandbox = query.calls[0][1].sandbox
-    assert sandbox is not None
-    assert sandbox["enabled"] is False
+    options = query.calls[0][1]
+    assert options.sandbox is not None
+    assert options.sandbox["enabled"] is False
+    # The scrub would make Claude Code demand its sandbox and refuse every Bash command.
+    assert "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB" not in options.env
 
 
 async def test_agent_budget_caps_task_budget(task: AgentTask) -> None:
