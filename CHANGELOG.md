@@ -48,6 +48,7 @@ All notable changes to this project are documented here. The format follows
 - Sockets, FIFOs and device files left in the workspace are not copied to the publish clone.
 - An unexpected (non-SDK) agent error, or a timeout after the run's result arrived, no longer
   loses the attempt's spend or an earlier attempt's draft PR.
+- The PR's usage table shows cache-write tokens, so its counts add up to the job history's.
 - The PR body's guardrail events are capped (20 lines), so a long list cannot exceed
   GitHub's body limit after the push.
 
@@ -58,6 +59,8 @@ All notable changes to this project are documented here. The format follows
   a secret containing `#`, `@` or `[`. The commit message and PR title neutralise `#123` and
   `@user` references like the body.
 - A configured secret in the ticket title is masked in the commit message and PR title too.
+- The agent's Bash sandbox also denies `/run/user` and `/run/dbus` (host IPC sockets), as the
+  test sandbox already did.
 - Without the sandbox, leftover processes (including a "zombie" whose other threads still run)
   are frozen then killed until none is left, never blocking past the deadline; a job
   refuses to publish if any survives. The eval harness ignores the developer's git config.

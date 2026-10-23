@@ -34,6 +34,9 @@ from ticket2pr.sandbox import ensure_sandbox_available
 logger = logging.getLogger(__name__)
 # Claude Code's shared temp dirs: /tmp/claude-<uid> since CLI 2.1.309, /tmp/claude before.
 _SHARED_TMP = ["/tmp/claude", f"/tmp/claude-{os.getuid()}"]  # noqa: S108
+# Host IPC sockets (the systemd/D-Bus user bus): `systemd-run --user` would start a process
+# outside the sandbox, should Claude Code's seccomp filter for unix sockets be unavailable.
+_HOST_IPC = ["/run/user", "/run/dbus"]
 
 # Built-in tools the agent may use. Web access and sub-agents are left out: the ticket and the
 # repository are the whole context, and fewer tools means fewer ways to exfiltrate data.
@@ -153,7 +156,11 @@ class ClaudeAgent:
                 # Bash reads are deny-listed: hide the service's home and data (other jobs,
                 # the job database, credentials), then re-open the workspace and toolchains.
                 "filesystem": {
-                    "denyRead": [*(str(path) for path in self._read_denied), *_SHARED_TMP],
+                    "denyRead": [
+                        *(str(path) for path in self._read_denied),
+                        *_SHARED_TMP,
+                        *_HOST_IPC,
+                    ],
                     "allowRead": [
                         str(workspace),
                         str(agent_tmp),

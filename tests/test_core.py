@@ -353,7 +353,7 @@ def test_pr_body_contents() -> None:
     )
     assert "Resolves [PROJ-1](https://acme.atlassian.net/browse/PROJ-1): Fix" in body
     assert "2 file(s), +10 / -2" in body
-    assert "| `claude-opus-5-5` | $1.23 |" in body
+    assert "| `claude-opus-5-5` | $1.23 | 1,000 / 200 / 50 / 0 |" in body
     assert "❌ failed" in body
     assert "````\nE  ``` assert\n````" in body  # fence outgrows backticks in the output
     assert "Not committed (protected path): ` .env `" in body

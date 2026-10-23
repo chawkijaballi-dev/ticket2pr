@@ -25,7 +25,7 @@ _TAIL_CHARS = 8_000
 _TAIL_BYTES = 4 * _TAIL_CHARS  # UTF-8: at most 4 bytes per character
 _DRAIN_TIMEOUT_S = 5.0
 # Not VIRTUAL_ENV: it would point tools such as `poetry run` at ticket2pr's own virtualenv.
-_ENV_PASSTHROUGH = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "UV_CACHE_DIR")
+_ENV_PASSTHROUGH = ("PATH", "HOME", "LANG", "LC_ALL", "UV_CACHE_DIR")
 _TOOLCHAIN_HOMES = {"RUSTUP_HOME": ".rustup", "CARGO_HOME": ".cargo", "PYENV_ROOT": ".pyenv"}
 
 

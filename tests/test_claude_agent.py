@@ -261,7 +261,14 @@ async def test_options_lock_down_the_agent(task: AgentTask) -> None:
     assert sandbox["failIfUnavailable"] is True
     agent_tmp = task.workspace.resolve().parent / "agent-tmp"  # per job, not /tmp/claude
     assert sandbox["filesystem"] == {
-        "denyRead": ["/home/svc", "/srv/t2p", "/tmp/claude", f"/tmp/claude-{os.getuid()}"],
+        "denyRead": [
+            "/home/svc",
+            "/srv/t2p",
+            "/tmp/claude",
+            f"/tmp/claude-{os.getuid()}",
+            "/run/user",
+            "/run/dbus",
+        ],
         "allowRead": [str(task.workspace.resolve()), str(agent_tmp), "/opt/python"],
         "allowWrite": [str(agent_tmp)],
         "denyWrite": ["/tmp/claude", f"/tmp/claude-{os.getuid()}"],

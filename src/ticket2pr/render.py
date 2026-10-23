@@ -66,10 +66,11 @@ def pr_body(
 
 def usage_table(usage: Usage, *, model: str) -> str:
     return (
-        "| Model | Cost | Tokens (in / out / cache read) | Turns | Duration |\n"
+        "| Model | Cost | Tokens (in / out / cache read / cache write) | Turns | Duration |\n"
         "|---|---|---|---|---|\n"
         f"| `{model}` | {usage.cost_label} | "
-        f"{usage.input_tokens:,} / {usage.output_tokens:,} / {usage.cache_read_tokens:,} | "
+        f"{usage.input_tokens:,} / {usage.output_tokens:,} / {usage.cache_read_tokens:,} / "
+        f"{usage.cache_creation_tokens:,} | "
         f"{usage.turns} | {usage.duration_s / 60:.1f} min |"
     )
 
