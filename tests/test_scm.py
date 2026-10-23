@@ -82,6 +82,20 @@ async def test_remote_head_tolerates_an_empty_email(repos_dir: Path, tmp_path: P
     assert head[1:] == ("", "")
 
 
+async def test_per_user_ignore_file_is_ignored(
+    repos_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A planted ~/.config/git/ignore must not hide new files from ticket2pr's commit."""
+    home = tmp_path / "home"
+    (home / ".config" / "git").mkdir(parents=True)
+    (home / ".config" / "git" / "ignore").write_text("*.py\n")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    repo = await GitRepo.clone((repos_dir / REPO).as_uri(), tmp_path / "ws", branch="main")
+    (repo.path / "new_module.py").write_text("x = 1\n")
+    assert (await repo.stage_all()).files == ("new_module.py",)
+
+
 async def test_undecodable_names_round_trip(repos_dir: Path, tmp_path: Path) -> None:
     repo = await GitRepo.clone((repos_dir / REPO).as_uri(), tmp_path / "ws", branch="main")
     name = os.fsdecode(b"x\xff.pem")

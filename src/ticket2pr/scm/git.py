@@ -31,6 +31,8 @@ _SAFE_CONFIG = (
     "-c", "core.hooksPath=/dev/null",
     "-c", "core.fsmonitor=false",
     "-c", "core.attributesFile=/dev/null",
+    # Not even ~/.config/git/ignore, which an earlier unsandboxed job could have written.
+    "-c", "core.excludesFile=/dev/null",
     "-c", "core.quotePath=false",
     "-c", "commit.gpgsign=false",
     "-c", "maintenance.auto=false",  # no detached background maintenance processes

@@ -49,6 +49,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- ticket2pr's git ignores the per-user excludes file (`~/.config/git/ignore`).
 - Literal git pathspecs, so protected paths such as `:x/.env` are never committed.
 - The guard expands `~/` before confining file tools to the workspace.
 - The staged diff is read with a 20 MiB bound before the in-memory secret scan.
