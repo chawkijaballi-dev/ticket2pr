@@ -324,8 +324,8 @@ class Pipeline:
             raise AgentError("the agent finished without changing any file")
         if len(changes.files) > self._settings.max_changed_files:
             raise PolicyViolationError(
-                f"the change touches {len(changes.files)} files "
-                f"(limit {self._settings.max_changed_files})"
+                # Not the count: the ticket would learn a number the agent chose.
+                f"the change touches too many files (limit {self._settings.max_changed_files})"
             )
         if self._redactor.contains_secret(await repo.staged_diff(_MAX_DIFF_BYTES)):
             raise PolicyViolationError("the change contains a configured secret; not pushing it")

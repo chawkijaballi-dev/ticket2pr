@@ -243,7 +243,7 @@ async def test_too_many_files_is_a_policy_violation(
     pipeline = make_pipeline(ScriptedAgent([sprawl]), max_changed_files=2)
     job = await pipeline.run(claim(store, "CALC-1"))
     assert job.status is JobStatus.FAILED
-    assert "touches 4 files (limit 2)" in (job.error or "")
+    assert job.error == "the change touches too many files (limit 2)"
 
 
 async def test_oversized_change_is_a_policy_violation(

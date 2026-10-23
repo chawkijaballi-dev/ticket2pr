@@ -30,7 +30,7 @@ layers above it can fail.
 | Repository tests in ticket2pr's bubblewrap sandbox: fresh PID namespace (no other process's `/proc/<pid>/environ`), no network unless `T2P_TEST_NETWORK`, read-only root, writable workspace and private `/tmp` only, an empty `/run` (no host IPC sockets such as the systemd/D-Bus user bus, which would otherwise let `systemd-run --user` start a process outside the sandbox), the service's home, data and working directories hidden, minimal environment, own process group, hard timeout | `sandbox.py`, `verify.py` | T2, T3 |
 | **Fails closed:** Claude Code silently runs Bash unsandboxed when `bwrap`/`socat` are missing, so every job checks them first and is refused (before any clone or spend) when they are absent | `sandbox.py`, `pipeline.py` | T2, T3 |
 | The service process is made non-dumpable (`PR_SET_DUMPABLE=0`), so same-uid processes cannot read its `/proc/<pid>/environ` or memory | `sandbox.py`, `cli.py` | T2 |
-| `PreToolUse` guard: file tools confined to the workspace, `.git/` off limits, protected globs read-only, history/remote/config git commands and environment dumps blocked | `agent/guard.py` | T2, T4, T5 |
+| `PreToolUse` guard: file tools confined to the workspace, `.git/` off limits, protected globs read-only, history/remote/config git commands, environment dumps and background commands blocked | `agent/guard.py` | T2, T4, T5 |
 | **Fork mode** (`T2P_FORK_OWNER`): branches go to a fork owned by the bot and PRs are cross-repository, so the target repository's CI treats them as fork PRs (no secrets, read-only token, approval can be required) | `pipeline.py` | T8 |
 | No git command runs in the agent's workspace after the agent started. The tree (never any `.git`) is copied into a fresh **publish clone**, where ticket2pr commits and pushes | `pipeline.py`, `scm/git.py` | T4 |
 | Every ticket2pr git command ignores system and global config, disables hooks, fsmonitor and external attribute files, allows only https/file transports, and gets credentials through `GIT_CONFIG_*` environment variables (never argv or a config file) | `scm/git.py` | T2, T4 |
@@ -42,9 +42,18 @@ layers above it can fail.
 | HMAC-SHA256 webhook signature (constant-time compare), body size limit enforced while reading, label-added trigger, idempotent claims | `server.py`, `store.py` | T7, T6 |
 | Bearer token for the jobs API; endpoint disabled when unset | `server.py` | information disclosure |
 
-The guard is defence in depth, not the boundary: it parses shell text heuristically and errs
-toward blocking. The boundaries are the sandboxes, the scrubbed environments and the publish
-clone.
+For Bash the guard is defence in depth, not the boundary: it parses shell text heuristically
+and errs toward blocking. The boundaries are the sandboxes, the scrubbed environments and the
+publish clone.
+
+The file tools (Read, Write, Edit) are the exception: they run in the Claude Code process,
+outside the OS sandbox. Reads are also refused outside the workspace by Claude Code itself
+(`blockReadsOutsideWorkingDirectories`), but **writes are confined by the guard alone**. The
+guard resolves symlinks before the tool acts, so it would lose a race against a process
+swapping a symlink in between; that is why background Bash commands are blocked: in sandbox
+mode each command's PID namespace ends with it, so no agent process runs while a file tool
+does. Without the sandbox this does not hold (see deployment guidance): run one container per
+job, or keep `T2P_SANDBOX=true`, when tickets come from untrusted reporters.
 
 Residual risks:
 

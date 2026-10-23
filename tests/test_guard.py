@@ -116,3 +116,10 @@ def test_tools_without_paths_pass(policy: Policy) -> None:
 )
 def test_is_protected(policy: Policy, path: str, protected: bool) -> None:
     assert policy.is_protected(path) is protected
+
+
+def test_background_commands_are_blocked(policy: Policy) -> None:
+    """A process outliving its command could race the (unsandboxed) file tools' writes."""
+    verdict = policy.check("Bash", {"command": "pytest", "run_in_background": True})
+    assert verdict == "background commands are not allowed"
+    assert policy.check("Bash", {"command": "pytest", "run_in_background": False}) is None

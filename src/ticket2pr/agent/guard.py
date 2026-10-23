@@ -36,6 +36,11 @@ class Policy:
     def check(self, tool_name: str, tool_input: dict[str, Any]) -> str | None:
         """Return why the call must be blocked, or ``None`` to let it through."""
         if tool_name == "Bash":
+            if tool_input.get("run_in_background"):
+                # The file tools run outside the OS sandbox and act after this check: a
+                # sandboxed process left running could swap a symlink in between. Without
+                # background commands, each Bash sandbox (PID namespace) ends with its command.
+                return "background commands are not allowed"
             return self._check_bash(str(tool_input.get("command", "")))
         for key in _PATH_KEYS:
             raw = tool_input.get(key)
