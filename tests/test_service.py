@@ -226,12 +226,14 @@ def test_startup_fails_interrupted_jobs(
         job.status = JobStatus.RUNNING
         runtime.store.save(job)
         (settings.workspaces_dir / f"job-{job.id}" / "work").mkdir(parents=True)  # left behind
+        (settings.workspaces_dir / "job-999").mkdir()  # kept on purpose (--keep-workspace)
         return runtime
 
     with TestClient(create_app(service_settings, runtime_factory=factory)) as test_client:
         runtime: Runtime = test_client.app.state.runtime  # type: ignore[attr-defined]
         assert runtime.store.list()[0].status is JobStatus.FAILED
-        assert list(runtime.settings.workspaces_dir.glob("job-*")) == []
+        kept = runtime.settings.workspaces_dir.glob("job-*")
+        assert [path.name for path in kept] == ["job-999"]
 
 
 def test_startup_resumes_queued_jobs(
@@ -381,7 +383,7 @@ def test_cli_doctor_reports_missing_config(monkeypatch: pytest.MonkeyPatch, tmp_
     assert "GitHub token" in result.output
 
 
-@pytest.mark.parametrize("credential", ["api_key", "claude_login"])
+@pytest.mark.parametrize("credential", ["api_key", "claude_login", "claude_config_dir"])
 def test_cli_doctor_all_green(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, credential: str
 ) -> None:
@@ -389,6 +391,10 @@ def test_cli_doctor_all_green(
     monkeypatch.setenv("HOME", str(tmp_path))
     if credential == "api_key":
         monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    elif credential == "claude_config_dir":
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+        (tmp_path / "cfg").mkdir()
+        (tmp_path / "cfg" / ".credentials.json").write_text("{}")
     else:
         (tmp_path / ".claude").mkdir()
         (tmp_path / ".claude" / ".credentials.json").write_text("{}")

@@ -371,6 +371,18 @@ def test_pr_body_title_cannot_use_a_reference_from_the_summary() -> None:
     assert "\n\\[s]: https://e.test/x" in body
 
 
+def test_inert_text_cannot_unescape_a_link() -> None:
+    body = render.pr_body(
+        ticket=TICKET,
+        agent=AgentResult(outcome=AgentOutcome.COMPLETED, summary="see \\[log](https://e.test)"),
+        usage=USAGE,
+        changes=ChangeSet(files=("a.py",)),
+        tests=TestReport(command="pytest", passed=True),
+        model="m",
+    )
+    assert "see \\\\\\[log](https://e.test)" in body  # escaped backslash, escaped bracket
+
+
 def test_pr_body_without_tests_or_summary() -> None:
     body = render.pr_body(
         ticket=Ticket(key="PROJ-1", title="Fix"),

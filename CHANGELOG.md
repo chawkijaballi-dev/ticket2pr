@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- Branches are named `ticket2pr/<key>` (no title slug), so a re-run after a title edit
+- Branches are named `ticket2pr/<key in lower case>` (no title slug), so a re-run after a title edit
   updates the existing PR.
 - `registry.npmjs.org` is no longer in the default `T2P_NETWORK_ALLOWLIST` (it accepts
   `npm publish`); add it explicitly for JavaScript repositories.
@@ -17,7 +17,7 @@ All notable changes to this project are documented here. The format follows
   `PYENV_ROOT` are passed through so version-managed toolchains keep working.
 - Jobs fail on file names that are not valid UTF-8.
 - An interrupted agent attempt counts its whole remaining budget; `ticket2pr run` records
-  SIGTERM as an interruption; `serve` deletes workspaces left by crashed runs.
+  SIGTERM as an interruption; `serve` deletes the workspaces of runs a crash cut short.
 - npm's default "no test specified" script is not taken for a test suite.
 - Auto-detected Python tests run `python3 -m pytest -q`; sandboxed tests get `TMPDIR=/tmp`.
 - Sockets, FIFOs and device files left in the workspace are not copied to the publish clone.
@@ -34,9 +34,10 @@ All notable changes to this project are documented here. The format follows
   comments are a single code span.
 - Each job gets its own Claude Code temp directory instead of the shared `/tmp/claude`.
 - Jobs re-enqueued at startup are failed when their ticket key is invalid.
-- Ticket titles are escaped like agent text, and links (including reference definitions)
-  in agent text are escaped too.
-- A stopped agent's own text no longer reaches the ticket comment, only its outcome.
+- Ticket titles are escaped like agent text, and `[]` links (including reference
+  definitions) in agent text are escaped too.
+- Ticket comments carry no agent text or git/OS error output, only outcomes ticket2pr
+  words itself.
 - `CLAUDE_CONFIG_DIR` (where the `claude` login lives) is hidden from the agent and tests.
 - The Docker image's `/app` is root-owned.
 

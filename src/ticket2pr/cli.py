@@ -252,7 +252,8 @@ def _has_claude_credentials(settings: Settings) -> bool:
         return True
     if any(os.environ.get(name) for name in CLAUDE_CREDENTIAL_ENV_VARS):
         return True
-    return (Path.home() / ".claude" / ".credentials.json").is_file()
+    config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    return (config_dir.expanduser() / ".credentials.json").is_file()
 
 
 def _print_job(job: Job) -> None:

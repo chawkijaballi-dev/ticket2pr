@@ -93,6 +93,7 @@ class Pipeline:
         self._store.save(job)
         job_dir: Path | None = None
         outcome: _Outcome | None = None
+        public_error: str | None = None  # what the ticket comment may say
         try:
             ticket = await self._tracker.get_ticket(job.ticket_key)
             if options.require_label and self._settings.trigger_label not in ticket.labels:
@@ -112,10 +113,12 @@ class Pipeline:
         except Ticket2PRError as exc:
             job.status = JobStatus.FAILED
             job.error = self._redactor.redact(str(exc))
+            public_error = _public_error(exc, job.error)
             logger.warning("job %s (%s) failed: %s", job.id, job.ticket_key, job.error)
         except Exception as exc:  # a bug must not kill the worker; record it and move on
             job.status = JobStatus.FAILED
             job.error = self._redactor.redact(f"internal error: {type(exc).__name__}: {exc}")
+            public_error = _public_error(exc, job.error)
             logger.exception("job %s (%s) crashed", job.id, job.ticket_key)
         finally:
             # Record the outcome first: nothing below may lose it (cancellation, I/O errors).
@@ -125,7 +128,7 @@ class Pipeline:
                 await asyncio.to_thread(shutil.rmtree, job_dir, ignore_errors=True)
 
         if job.status is not JobStatus.SKIPPED:
-            await self._report(job, outcome)
+            await self._report(job, outcome, public_error)
         return job
 
     def _resolve_repo(self, job: Job, ticket: Ticket) -> str:
@@ -318,11 +321,11 @@ class Pipeline:
             raise PolicyViolationError("the change contains a configured secret; not pushing it")
         return changes, excluded
 
-    async def _report(self, job: Job, outcome: _Outcome | None) -> None:
+    async def _report(self, job: Job, outcome: _Outcome | None, error: str | None) -> None:
         comment = render.tracker_comment(
             published=(outcome.pr, outcome.tests) if outcome else None,
             usage=job.usage,
-            error=job.error,
+            error=error,
         )
         try:
             await self._tracker.comment(job.ticket_key, self._redactor.redact(comment))
@@ -337,3 +340,17 @@ def _is_utf8(name: str) -> bool:
     except UnicodeEncodeError:
         return False
     return True
+
+
+def _public_error(exc: Exception, detail: str) -> str:
+    """The error as the ticket may show it.
+
+    The ticket's reporter may not be allowed to read the repository, and git's stderr or an
+    OS error can quote file names the agent chose: only messages ticket2pr writes itself
+    (policy, agent outcome, configuration) are shown; the rest stay in the job record.
+    """
+    if isinstance(exc, AgentError | PolicyViolationError | ConfigurationError):
+        return detail
+    if isinstance(exc, SCMError):
+        return "a git operation failed (details in the ticket2pr job record)"
+    return "internal error (details in the ticket2pr job record)"

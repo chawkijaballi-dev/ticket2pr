@@ -112,14 +112,16 @@ def tracker_comment(
 
 
 def _inert(markdown: str) -> str:
-    """Untrusted Markdown (agent text, ticket title) without links, images or raw HTML.
+    """Untrusted Markdown (agent text, ticket title) without images, raw HTML or ``[]`` links.
 
     The ticket can steer the agent, and GitHub fetches every image of a PR body for each
-    viewer: an image URL could carry repository data out. Escaping every ``[`` also kills
-    reference definitions (``[x]: url``), which apply to the whole document. shortcut: the
-    escapes also show inside code blocks; parse the Markdown if that ever matters.
+    viewer: an image URL could carry repository data out. Escaping every ``[`` (after the
+    backslashes, so ``\\[`` cannot undo it) also kills reference definitions, which apply to
+    the whole document. Bare URLs still autolink, but only a click follows them. shortcut:
+    the escapes also show inside code blocks; parse the Markdown if that ever matters.
     """
-    return _HTML_START.sub("&lt;", markdown.replace("[", "\\["))
+    escaped = markdown.replace("\\", "\\\\").replace("[", "\\[")
+    return _HTML_START.sub("&lt;", escaped)
 
 
 def _code_span(text: str) -> str:

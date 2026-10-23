@@ -171,7 +171,10 @@ async def test_protected_path_left_staged_fails_closed(
 
 
 async def test_base_branch_moved_during_the_run(
-    make_pipeline: MakePipeline, store: JobStore, monkeypatch: pytest.MonkeyPatch
+    make_pipeline: MakePipeline,
+    store: JobStore,
+    monkeypatch: pytest.MonkeyPatch,
+    tickets_dir: Path,
 ) -> None:
     async def gone(self: GitRepo, branch: str, base: str) -> None:
         raise SCMError("fatal: not a commit")
@@ -180,6 +183,10 @@ async def test_base_branch_moved_during_the_run(
     job = await make_pipeline(ScriptedAgent([fix_add])).run(claim(store, "CALC-1"))
     assert job.status is JobStatus.FAILED
     assert "moved too far during the run" in (job.error or "")
+    # git/OS errors can quote names the agent chose: the ticket only learns the kind of error.
+    comment = (tickets_dir / "CALC-1.comments.md").read_text()
+    assert "a git operation failed" in comment
+    assert "moved too far" not in comment
 
 
 async def test_protected_paths_are_never_committed(

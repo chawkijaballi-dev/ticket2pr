@@ -124,12 +124,13 @@ def create_app(
 
 def start_queue(runtime: Runtime, *, workers: int) -> JobQueue:
     """Recover what a previous process left behind, then start the workers."""
+    # Workspaces of runs a crash cut short; kept ones (--keep-workspace) stay.
+    cut_short = runtime.store.list(limit=10_000, status=JobStatus.RUNNING)
     interrupted = runtime.store.fail_interrupted()
     if interrupted:
         logger.warning("marked %d interrupted job(s) as failed", interrupted)
-    # No job runs yet: every workspace left on disk belongs to a run a crash cut short.
-    for stale in runtime.settings.workspaces_dir.glob("job-*"):
-        shutil.rmtree(stale, ignore_errors=True)
+    for job in cut_short:
+        shutil.rmtree(runtime.settings.workspaces_dir / f"job-{job.id}", ignore_errors=True)
     queue = JobQueue(pipeline=runtime.pipeline, store=runtime.store, workers=workers)
     pending = runtime.store.list(limit=10_000, status=JobStatus.QUEUED)
     resumed = 0
