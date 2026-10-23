@@ -13,7 +13,7 @@ pull request that contains the fix, tests that pass, and a line saying exactly w
 ```text
 ticket2pr opened a pull request: https://github.com/acme/shop/pull/318
 
-Tests pass (`python3 -m pytest -q`).
+Tests pass (python3 -m pytest -q).
 
 - Cost: $0.84
 - Tokens: 412,903
@@ -25,60 +25,42 @@ ticket2pr is a small, auditable harness around the
 ticket2pr decides what it may touch, how much it may spend, whether the result is
 trustworthy, and what reviewers see.
 
-## En bref (FR)
+## At a glance
 
-### À quoi ça sert
+### What it is for
 
-Un ticket Jira devient une **pull request GitHub prête à relire**, sans qu'un développeur écrive le code.
-Un agent IA (Claude) lit le ticket, modifie le dépôt, lance les tests, puis ouvre la PR.
-Chaque PR indique exactement ce qu'elle a coûté.
+A Jira ticket becomes a **review-ready GitHub pull request** without a developer writing the code.
+An AI agent (Claude) reads the ticket, edits the repository, runs the tests and opens the PR.
+Every PR states exactly what it cost.
 
-### Le besoin
+### The need
 
-Une équipe accumule des petits tickets clairs : bugs simples, petites évolutions, corrections de tests.
-Ils prennent du temps aux développeurs pour peu de valeur. ticket2pr les traite automatiquement, mais sans risque :
+Teams pile up small, well-defined tickets: simple bugs, minor changes, test fixes. They take
+developer time for little value. ticket2pr handles them automatically, without the risk:
 
-- le code tourne isolé : sandbox, aucun secret visible par l'agent ;
-- le budget est plafonné : dollars et nombre de tours par ticket ;
-- **un humain relit toujours** : ticket2pr ouvre la PR, il ne la fusionne jamais.
+- code runs isolated: sandboxed, no secret visible to the agent;
+- spend is capped: dollars and agent turns per ticket;
+- **a human always reviews**: ticket2pr opens the PR, it never merges it.
 
-### Input → Output
+### Input → output
 
-| | Contenu |
+| | Content |
 |---|---|
-| **Input** | Un ticket Jira avec le label `ticket2pr` (titre + description), et le dépôt GitHub associé au projet (`T2P_REPOS`, ex. `{"SHOP": "acme/shop"}`). |
-| **Output** | Une **branche** `ticket2pr/<clé>` et une **PR** qui contient le résumé du changement, le résultat des tests, la taille du diff, le coût, les tokens et les tours. La PR est en *draft* si les tests échouent ou n'ont pas été lancés. |
-| **Output (Jira)** | Un **commentaire sur le ticket** : lien vers la PR, statut des tests, coût. En cas d'échec, la raison. |
-| **Historique** | Une base SQLite des jobs (statut, coût, lien PR), lisible avec `ticket2pr jobs` ou `GET /jobs`. |
+| **Input** | A Jira ticket labelled `ticket2pr` (title + description), and the GitHub repository mapped to its project (`T2P_REPOS`, e.g. `{"SHOP": "acme/shop"}`). |
+| **Output** | A **branch** `ticket2pr/<key, lowercased>` (e.g. `ticket2pr/shop-101`) and a **PR** with the change summary, test results, diff size, cost, tokens and turns. The PR is a *draft* when the tests fail or did not run. |
+| **Output (Jira)** | A **comment on the ticket**: PR link, test status, cost; on failure, the reason. |
+| **History** | A SQLite job database (status, cost, PR link), readable with `ticket2pr jobs` or `GET /jobs`. |
 
-### Comment on l'utilise concrètement
+### How you use it
 
-**1. Essai local, sans Jira ni GitHub**
+1. Try it locally, without Jira or GitHub (see [Quick start](#quick-start)): `make eval` is
+   free, and one real agent run on the `paginate` eval task costs about $0.20.
+2. In production, run the service (`ticket2pr serve` or `docker compose up --build`) and point
+   a Jira webhook at `https://<host>/webhooks/jira`.
+3. Day to day: someone adds the `ticket2pr` label to a ticket; minutes later the ticket has a
+   comment with the PR link; a developer reviews, adjusts if needed, and merges.
 
-```bash
-make install
-make eval                                             # gratuit : vérifie que tout marche
-export ANTHROPIC_API_KEY=sk-ant-...
-uv run ticket2pr eval --agent claude --task paginate  # vrai agent, environ 0,20 $
-```
-
-**2. En production (service)**
-
-```bash
-cp .env.example .env      # tokens Jira, GitHub et Anthropic, mapping projet → dépôt
-uv run ticket2pr doctor   # vérifie la configuration
-uv run ticket2pr serve    # ou : docker compose up --build
-```
-
-Ensuite, dans Jira, créer un webhook vers `https://<host>/webhooks/jira` avec le même secret.
-
-**3. Au quotidien**
-
-1. Un chef de projet ou un développeur ajoute le label `ticket2pr` au ticket.
-2. Quelques minutes plus tard, un commentaire sur le ticket donne le lien de la PR.
-3. Un développeur relit la PR, la corrige si besoin, puis la fusionne.
-
-Pour un seul ticket, à la main : `uv run ticket2pr run SHOP-101`.
+For a single ticket by hand: `uv run ticket2pr run SHOP-101`.
 
 ## Why it is different from "an LLM in a loop"
 
@@ -151,7 +133,7 @@ make eval               # offline suite with the oracle agent: free, no credenti
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-uv run ticket2pr eval --agent claude --task paginate      # real agent, ~$1
+uv run ticket2pr eval --agent claude --task paginate      # real agent, ~$0.20
 ```
 
 or point `run` at your own directories (`<repos>/<owner>/<name>` git repos, `<tickets>/<KEY>.yaml`):

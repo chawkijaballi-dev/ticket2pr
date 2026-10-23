@@ -17,7 +17,8 @@ All notable changes to this project are documented here. The format follows
   `PYENV_ROOT` are passed through so version-managed toolchains keep working.
 - Jobs fail on file names that are not valid UTF-8.
 - An interrupted agent attempt counts its whole remaining budget; `ticket2pr run` records
-  SIGTERM as an interruption; `serve` deletes leftover workspaces at startup, except those kept with `--keep-workspace`;
+  SIGTERM as an interruption; `serve` deletes leftover workspaces at startup, except those kept with `--keep-workspace`
+  (by this version: older kept workspaces have no `.keep` marker and are removed);
   git aborts a clone or push stalled under 1 KB/s for 60 s.
 - npm's default "no test specified" script is not taken for a test suite.
 - Auto-detected Python tests run `python3 -m pytest -q`; sandboxed tests get `TMPDIR=/tmp`.
