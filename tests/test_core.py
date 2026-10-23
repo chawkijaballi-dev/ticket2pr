@@ -12,7 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from ticket2pr import render
-from ticket2pr.config import Settings
+from ticket2pr.config import Settings, secret_env_names
 from ticket2pr.domain import (
     AgentOutcome,
     AgentResult,
@@ -75,6 +75,13 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # Relative data dirs are made absolute: workspaces are handed to git and subprocesses.
     assert settings.db_path == Path.cwd() / ".ticket2pr" / "jobs.sqlite3"
     assert settings.workspaces_dir == Path.cwd() / ".ticket2pr" / "workspaces"
+
+
+def test_differently_cased_secrets_are_hidden_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Settings read ``t2p_github_token`` as well, so the agent must not see it either."""
+    monkeypatch.setenv("t2p_github_token", "ghp_lowercase_secret")
+    assert Settings(_env_file=None).github_token.get_secret_value() == "ghp_lowercase_secret"
+    assert "t2p_github_token" in secret_env_names()
 
 
 @pytest.mark.parametrize("repos", [{"proj": "acme/api"}, {"PROJ": "not-a-repo"}, {"PROJ": "a/b/c"}])

@@ -195,7 +195,11 @@ def _guard_hook(
         if hook_input["hook_event_name"] != "PreToolUse":
             return {}
         tool_name = hook_input["tool_name"]
-        reason = policy.check(tool_name, hook_input["tool_input"])
+        try:
+            reason = policy.check(tool_name, hook_input["tool_input"])
+        except Exception:  # the CLI treats a failing hook as no decision: deny instead
+            logger.warning("guard error on %s", tool_name, exc_info=True)
+            reason = "the guard could not check this call"
         if reason is None:
             return {}
         policy.denied.append(f"{tool_name}: {reason}")

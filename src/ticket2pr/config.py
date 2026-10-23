@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Literal
@@ -208,4 +209,6 @@ def secret_env_names() -> tuple[str, ...]:
         if isinstance(alias, AliasChoices):
             names.update(choice for choice in alias.choices if isinstance(choice, str))
     names.difference_update(CLAUDE_CREDENTIAL_ENV_VARS)
+    # Settings match variable names case-insensitively: hide every spelling that is set.
+    names.update(key for key in os.environ if key.upper() in names)
     return tuple(sorted(names))

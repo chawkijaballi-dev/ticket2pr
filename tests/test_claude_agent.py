@@ -297,6 +297,22 @@ async def test_guard_hook_denies_and_records(task: AgentTask) -> None:
     assert await hook(stop, None, CTX) == {}
 
 
+async def test_guard_hook_denies_when_the_check_fails(task: AgentTask) -> None:
+    query = Recorder(_result())
+    await _agent(query).run(task)
+    hook = _guard(query.calls[0][1])
+    call = cast(
+        "HookInput",
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Read",
+            "tool_input": {"file_path": "x\0y"},  # resolve() raises ValueError
+        },
+    )
+    denied: dict[str, Any] = dict(await hook(call, "t1", CTX))
+    assert denied["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
 async def test_denied_actions_are_reported(task: AgentTask) -> None:
     class DenyingQuery(Recorder):
         async def _stream(self) -> AsyncIterator[Any]:
