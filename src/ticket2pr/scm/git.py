@@ -38,6 +38,9 @@ _SAFE_CONFIG = (
     "-c", "protocol.allow=never",
     "-c", "protocol.https.allow=always",
     "-c", "protocol.file.allow=always",
+    # A stalled clone or push must not hold a worker forever: abort under 1 KB/s for 60 s.
+    "-c", "http.lowSpeedLimit=1000",
+    "-c", "http.lowSpeedTime=60",
 )  # fmt: skip
 
 

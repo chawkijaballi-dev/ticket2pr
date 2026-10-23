@@ -227,6 +227,8 @@ def test_startup_fails_interrupted_jobs(
         runtime.store.save(job)
         (settings.workspaces_dir / f"job-{job.id}" / "work").mkdir(parents=True)  # left behind
         (settings.workspaces_dir / "job-999").mkdir()  # kept on purpose (--keep-workspace)
+        (settings.workspaces_dir / "job-999" / ".keep").touch()
+        (settings.workspaces_dir / "job-998").mkdir()  # its job failed, but cleanup was killed
         return runtime
 
     with TestClient(create_app(service_settings, runtime_factory=factory)) as test_client:

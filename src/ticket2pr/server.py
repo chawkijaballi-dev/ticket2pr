@@ -21,6 +21,7 @@ from ticket2pr import __version__
 from ticket2pr.config import Settings
 from ticket2pr.domain import Job, JobStatus, is_ticket_key
 from ticket2pr.errors import ConfigurationError
+from ticket2pr.pipeline import KEEP_MARKER
 from ticket2pr.runtime import Runtime, build_runtime
 from ticket2pr.worker import JobQueue
 
@@ -124,13 +125,14 @@ def create_app(
 
 def start_queue(runtime: Runtime, *, workers: int) -> JobQueue:
     """Recover what a previous process left behind, then start the workers."""
-    # Workspaces of runs a crash cut short; kept ones (--keep-workspace) stay.
-    cut_short = runtime.store.list(limit=10_000, status=JobStatus.RUNNING)
     interrupted = runtime.store.fail_interrupted()
     if interrupted:
         logger.warning("marked %d interrupted job(s) as failed", interrupted)
-    for job in cut_short:
-        shutil.rmtree(runtime.settings.workspaces_dir / f"job-{job.id}", ignore_errors=True)
+    # No job runs yet: what is on disk was left by a crash or a kill mid-cleanup, except the
+    # workspaces kept on purpose (--keep-workspace).
+    for stale in runtime.settings.workspaces_dir.glob("job-*"):
+        if not (stale / KEEP_MARKER).exists():
+            shutil.rmtree(stale, ignore_errors=True)
     queue = JobQueue(pipeline=runtime.pipeline, store=runtime.store, workers=workers)
     pending = runtime.store.list(limit=10_000, status=JobStatus.QUEUED)
     resumed = 0

@@ -327,6 +327,7 @@ async def test_workspace_is_removed_unless_kept(
 
     kept = await pipeline.run(claim(store, "CALC-1"), RunOptions(keep_workspace=True))
     assert (settings.workspaces_dir / f"job-{kept.id}" / "work" / "calc.py").exists()
+    assert (settings.workspaces_dir / f"job-{kept.id}" / ".keep").exists()  # spared at startup
 
 
 async def test_rerun_updates_the_existing_pr(

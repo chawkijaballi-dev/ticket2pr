@@ -55,6 +55,7 @@ from ticket2pr.verify import detect_test_command, run_tests
 logger = logging.getLogger(__name__)
 
 _MIN_RETRY_BUDGET_USD = 0.25
+KEEP_MARKER = ".keep"
 _MAX_DIFF_BYTES = 20 * 1024 * 1024  # the secret scan holds the whole diff in memory
 
 
@@ -126,7 +127,9 @@ class Pipeline:
             # Record the outcome first: nothing below may lose it (cancellation, I/O errors).
             self._store.save(job)
             await self._reap_untrusted_processes()
-            if job_dir is not None and not options.keep_workspace:
+            if job_dir is not None and options.keep_workspace and job_dir.is_dir():
+                (job_dir / KEEP_MARKER).touch()  # so serve's startup cleanup leaves it alone
+            elif job_dir is not None:
                 await asyncio.to_thread(shutil.rmtree, job_dir, ignore_errors=True)
 
         if job.status is not JobStatus.SKIPPED:
