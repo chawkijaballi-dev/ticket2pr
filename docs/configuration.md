@@ -21,7 +21,7 @@ name, `ANTHROPIC_API_KEY`, in the environment or in `.env`.
 | `T2P_BASE_BRANCH` | `main` | Branch to clone and target with PRs. |
 | `T2P_BRANCH_PREFIX` | `ticket2pr/` | Prefix of the branches pushed. |
 | `T2P_COMMIT_AUTHOR_NAME` | `ticket2pr` | Commit author name. |
-| `T2P_COMMIT_AUTHOR_EMAIL` | `ticket2pr@users.noreply.github.com` | Commit author email. |
+| `T2P_COMMIT_AUTHOR_EMAIL` | `ticket2pr@users.noreply.github.com` | Commit author email. Also how re-runs recognise ticket2pr's own commits: a branch whose head has another author email is never overwritten. |
 | `T2P_ANTHROPIC_API_KEY` | *(secret)* | Claude API key (also read without the T2P_ prefix). Empty: the Claude Agent SDK uses its own credentials (environment or `claude` login). |
 | `T2P_MODEL` | `claude-opus-5-5` | Claude model the agent runs on. |
 | `T2P_EFFORT` | `high` | low, medium, high, xhigh or max. |

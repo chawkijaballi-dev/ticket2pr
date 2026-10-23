@@ -156,7 +156,7 @@ updated*, pointing to `https://<host>/webhooks/jira`, with the same secret as
 `T2P_JIRA_WEBHOOK_SECRET`. Then add the `ticket2pr` label to a ticket.
 
 ```bash
-ticket2pr jobs                     # recent jobs with cost and PR links
+uv run ticket2pr jobs              # recent jobs with cost and PR links
 curl -H "Authorization: Bearer $T2P_API_TOKEN" localhost:8080/jobs
 ```
 

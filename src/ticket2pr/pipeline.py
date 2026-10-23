@@ -138,8 +138,7 @@ class Pipeline:
             elif job_dir is not None:
                 await asyncio.to_thread(shutil.rmtree, job_dir, ignore_errors=True)
 
-        if job.status is not JobStatus.SKIPPED:
-            await self._report(job, outcome, public_error)
+        await self._report(job, outcome, public_error)  # skipped jobs returned above, silently
         return job
 
     def _resolve_repo(self, job: Job, ticket: Ticket) -> str:
