@@ -103,6 +103,9 @@ class TestSandbox:
         # process outside the sandbox.
         command += ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
         command += ["--tmpfs", "/tmp", "--tmpfs", "/run"]  # noqa: S108
+        var_run = Path("/var/run")
+        if var_run.is_dir() and not var_run.is_symlink():  # usually a link to /run
+            command += ["--tmpfs", str(var_run)]
         resolv = Path(os.path.realpath("/etc/resolv.conf"))
         if self.network and resolv.is_relative_to("/run") and resolv.is_file():
             # systemd-resolved: /etc/resolv.conf points into the /run just emptied. The file

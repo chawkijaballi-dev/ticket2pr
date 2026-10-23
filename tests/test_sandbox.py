@@ -628,6 +628,8 @@ def test_redactor_masks_provider_credentials(
     assert Redactor.from_settings(settings).redact("Bearer gw-tok-456") == MASK
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", "Authorization=Bearer%20otlp-enc-789")
     assert Redactor.from_settings(settings).redact("token otlp-enc-789") == f"token {MASK}"
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", "Authorization=Api-Token%20dt0c01.ABCDEFGH")
+    assert Redactor.from_settings(settings).contains_secret("dt0c01.ABCDEFGH")
 
 
 def test_redactor_ignores_variables_that_are_not_credentials(
@@ -640,6 +642,22 @@ def test_redactor_ignores_variables_that_are_not_credentials(
     assert not redactor.contains_secret("import subprocess")
     assert not redactor.contains_secret("blanked-for-the-agent")
     assert redactor.redact("software engineering") == "software engineering"
+    monkeypatch.setenv("CLAUDE_CODE_API_KEY_HELPER_TTL_MS", "86400000")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-api-key=k3y-v4lue-1,x-dataset=claude-code")
+    redactor = Redactor.from_settings(settings)
+    assert not redactor.contains_secret("ms = 86400000")
+    assert not redactor.contains_secret("service: claude-code")
+    assert redactor.contains_secret("k3y-v4lue-1")
+
+
+def test_wrap_empties_a_real_var_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    real = Path.is_symlink
+    monkeypatch.setattr(Path, "is_dir", lambda self: True)
+    monkeypatch.setattr(
+        Path, "is_symlink", lambda self: False if str(self) == "/var/run" else real(self)
+    )
+    argv = TestSandbox(hidden=()).wrap(["x"], tmp_path)
+    assert argv[argv.index("/var/run") - 1] == "--tmpfs"
 
 
 def test_redactor_masks_a_secret_cut_by_a_tail() -> None:

@@ -30,9 +30,10 @@ _MIN_SECRET_LEN = 8  # shorter values would mask ordinary words
 _CREDENTIAL_NAME = re.compile(
     r"(?:^|_)(?:KEY|TOKEN|SECRET|PASSWORD|PASSPHRASE|HEADERS)(?:_|$)", re.IGNORECASE
 )
-_AUTH_SCHEME = re.compile(r"(?:bearer|basic|token)\s+(\S+)", re.IGNORECASE)
-# Header lists: "k=v,k2=v2" (OTLP) or "Name: value" lines (ANTHROPIC_CUSTOM_HEADERS).
-_HEADER_VALUE = re.compile(r"[^\n,=:]+[=:]\s*([^\n,]+)")
+# Header lists: "k=v,k2=v2" (OTLP) or "Name: value" lines (ANTHROPIC_CUSTOM_HEADERS). Only
+# credential headers count (not x-honeycomb-dataset or anthropic-beta).
+_HEADER = re.compile(r"([^\n,=:]+)[=:]\s*([^\n,]+)")
+_CREDENTIAL_HEADER = re.compile(r"auth|key|token|secret|password|team", re.IGNORECASE)
 
 
 class Redactor:
@@ -52,11 +53,16 @@ class Redactor:
         for name, value in os.environ.items():
             # A variable the agent never sees cannot reach the diff: no false positives from it.
             if name in known or (agent_env_kept(name) and _CREDENTIAL_NAME.search(name)):
-                for part in (value, *_HEADER_VALUE.findall(value)):
+                if value.isdigit():  # CLAUDE_CODE_API_KEY_HELPER_TTL_MS=86400000
+                    continue
+                values.append(value)
+                for header, part in _HEADER.findall(value):
+                    if not _CREDENTIAL_HEADER.search(header):
+                        continue
                     decoded = unquote(part.strip())  # OTLP headers are percent-encoded
                     values += [part, decoded]
-                    if scheme := _AUTH_SCHEME.fullmatch(decoded):  # "Bearer <token>"
-                        values.append(scheme.group(1))
+                    if "authorization" in header.lower():  # "Bearer <token>", "Api-Token <t>"
+                        values.append(decoded.rpartition(" ")[2])
         for name in PROXY_ENV_VARS:
             proxy = os.environ.get(name, "")
             with suppress(ValueError):

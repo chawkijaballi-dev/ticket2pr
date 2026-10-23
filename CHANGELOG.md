@@ -79,7 +79,9 @@ All notable changes to this project are documented here. The format follows
   neutralised too.
 - A configured secret in the ticket title is masked in the commit message and PR title too.
 - The agent's Bash sandbox also denies `/run` and `/var/run` (host IPC sockets), as the test
-  sandbox already did.
+  sandbox already did. The test sandbox also empties a `/var/run` that is not a link to `/run`.
+  Credential-variable values are registered only for credential headers, any `Authorization`
+  scheme, and never when purely numeric.
 - Without the sandbox, leftover processes (including a "zombie" whose other threads still run)
   are frozen then killed until none is left, never blocking past the deadline; a job
   refuses to publish if any survives. The eval harness ignores the developer's git config.
