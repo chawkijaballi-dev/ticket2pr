@@ -25,8 +25,8 @@ from conftest import (
 from ticket2pr.agent.base import AgentTask
 from ticket2pr.config import Settings
 from ticket2pr.domain import AgentOutcome, AgentResult, Job, JobStatus
-from ticket2pr.errors import SCMError
-from ticket2pr.pipeline import Pipeline, RunOptions
+from ticket2pr.errors import PolicyViolationError, SCMError, TrackerError
+from ticket2pr.pipeline import Pipeline, RunOptions, _public_error
 from ticket2pr.scm.git import GitRepo, sync_tree
 from ticket2pr.scm.host import LocalHost
 from ticket2pr.store import JobStore
@@ -185,7 +185,7 @@ async def test_base_branch_moved_during_the_run(
     assert "moved too far during the run" in (job.error or "")
     # git/OS errors can quote names the agent chose: the ticket only learns the kind of error.
     comment = (tickets_dir / "CALC-1.comments.md").read_text()
-    assert "a git operation failed" in comment
+    assert "a git or GitHub operation failed" in comment
     assert "moved too far" not in comment
 
 
@@ -305,7 +305,7 @@ async def test_missing_ticket_fails(make_pipeline: MakePipeline, store: JobStore
 
 
 async def test_unexpected_exception_is_recorded(
-    make_pipeline: MakePipeline, store: JobStore
+    make_pipeline: MakePipeline, store: JobStore, tickets_dir: Path
 ) -> None:
     def boom(task: AgentTask) -> None:
         raise RuntimeError("kaboom")
@@ -313,6 +313,9 @@ async def test_unexpected_exception_is_recorded(
     job = await make_pipeline(ScriptedAgent([boom])).run(claim(store, "CALC-1"))
     assert job.status is JobStatus.FAILED
     assert job.error == "internal error: RuntimeError: kaboom"
+    comment = (tickets_dir / "CALC-1.comments.md").read_text()
+    assert "internal error (details" in comment
+    assert "kaboom" not in comment
 
 
 async def test_workspace_is_removed_unless_kept(
@@ -691,3 +694,16 @@ async def test_unsandboxed_jobs_reap_on_failure_and_before_cloning(
     job = await make_pipeline(agent).run(claim(store, "CALC-1"))
     assert job.status is JobStatus.FAILED
     assert calls == ["reap", "reap"]  # before the first clone, and when the job ended
+
+
+@pytest.mark.parametrize(
+    ("exc", "public"),
+    [
+        (PolicyViolationError("too big"), "too big"),
+        (SCMError("remote: secret/path.py"), "a git or GitHub operation failed"),
+        (TrackerError("Jira 500: body"), "the ticket could not be read or updated"),
+        (OSError("/w/secret_name"), "internal error"),
+    ],
+)
+def test_ticket_only_sees_errors_ticket2pr_worded(exc: Exception, public: str) -> None:
+    assert _public_error(exc, str(exc)).startswith(public)

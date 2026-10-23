@@ -11,7 +11,7 @@
    offline adapters (`LocalTracker`, `LocalHost`, scripted agents) are interchangeable, which
    is what makes the end-to-end tests and the eval suite possible.
 3. **Failures are data.** Every expected failure is a `Ticket2PRError` subclass. The pipeline
-   turns it into a terminal job status with a human-readable reason, reports it on the ticket
+   turns it into a terminal job status with a human-readable reason, reports it on the ticket (only its kind when the text comes from git, an API or the OS)
    and keeps the spend. Unexpected exceptions are caught at the same boundary, logged with a
    traceback, and never kill a worker.
 4. **Typed and small.** `mypy --strict`, frozen Pydantic models for domain data, no global

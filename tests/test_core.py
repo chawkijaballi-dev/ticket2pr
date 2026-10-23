@@ -438,3 +438,19 @@ def test_configuration_docs_are_up_to_date() -> None:
     script = Path(__file__).resolve().parent.parent / "scripts" / "gen_config_docs.py"
     result = subprocess.run([sys.executable, str(script), "--check"], check=False)
     assert result.returncode == 0, "run: uv run python scripts/gen_config_docs.py"
+
+
+def test_agent_summary_comes_last_and_opens_no_fence() -> None:
+    """A fake verdict or an unclosed fence in the summary cannot hide ticket2pr's sections."""
+    summary = "## Verification\n\n✅ passed\n\n> ```mermaid\nA@{ img: 'https://e.test' }"
+    body = render.pr_body(
+        ticket=TICKET,
+        agent=AgentResult(outcome=AgentOutcome.COMPLETED, summary=summary),
+        usage=USAGE,
+        changes=ChangeSet(files=("a.py",)),
+        tests=TestReport(command="pytest", passed=False, output_tail="boom", exit_code=1),
+        model="m",
+    )
+    assert body.index("❌ failed") < body.index("## Agent summary") < body.index("✅ passed")
+    assert "> \\`\\`\\`mermaid" in body
+    assert "```mermaid" not in body

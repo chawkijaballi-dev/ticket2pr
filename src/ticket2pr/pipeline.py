@@ -4,8 +4,9 @@
     → commit → push → PR → comment
 
 Every step that can fail maps to a ``Ticket2PRError``; the job then ends ``FAILED`` with the
-reason recorded and reported back on the ticket. Spend is capped across retries: a second
-agent attempt only gets the budget the first one left unused.
+reason recorded. The ticket gets that reason when ticket2pr worded it, else only its kind.
+Spend is capped across retries: a second agent attempt only gets the budget the first one
+left unused.
 
 The agent's workspace is untrusted once the agent has run: ticket2pr never runs git in it
 again. The result is copied (tree only, no ``.git``) into a fresh *publish clone*, and the
@@ -41,6 +42,7 @@ from ticket2pr.errors import (
     PolicyViolationError,
     SCMError,
     Ticket2PRError,
+    TrackerError,
 )
 from ticket2pr.redaction import Redactor
 from ticket2pr.sandbox import ensure_sandbox_available, kill_descendants, sandbox_profile
@@ -352,5 +354,7 @@ def _public_error(exc: Exception, detail: str) -> str:
     if isinstance(exc, AgentError | PolicyViolationError | ConfigurationError):
         return detail
     if isinstance(exc, SCMError):
-        return "a git operation failed (details in the ticket2pr job record)"
+        return "a git or GitHub operation failed (details in the ticket2pr job record)"
+    if isinstance(exc, TrackerError):
+        return "the ticket could not be read or updated (details in the ticket2pr job record)"
     return "internal error (details in the ticket2pr job record)"

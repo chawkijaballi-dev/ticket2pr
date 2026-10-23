@@ -35,7 +35,8 @@ All notable changes to this project are documented here. The format follows
 - Each job gets its own Claude Code temp directory instead of the shared `/tmp/claude`.
 - Jobs re-enqueued at startup are failed when their ticket key is invalid.
 - Ticket titles are escaped like agent text, and `[]` links (including reference
-  definitions) in agent text are escaped too.
+  definitions) and fenced blocks in agent text are escaped too. The agent's summary is the
+  last section of the PR body.
 - Ticket comments carry no agent text or git/OS error output, only outcomes ticket2pr
   words itself.
 - `CLAUDE_CONFIG_DIR` (where the `claude` login lives) is hidden from the agent and tests.

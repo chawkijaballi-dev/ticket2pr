@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from ticket2pr.agent.base import AgentTask
-from ticket2pr.config import Settings
+from ticket2pr.config import CLAUDE_CREDENTIAL_ENV_VARS, Settings
 from ticket2pr.domain import AgentOutcome, AgentResult, Job, Usage
 from ticket2pr.pipeline import Pipeline
 from ticket2pr.scm.host import LocalHost
@@ -51,6 +51,9 @@ def _isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # The shared settings fixture disables the sandbox; CLI tests build Settings from the
     # environment, so they get the same default. tests/test_sandbox.py covers the sandbox.
     monkeypatch.setenv("T2P_SANDBOX", "false")
+    # Nor the developer's Claude login: tests that need credentials set their own.
+    for name in ("CLAUDE_CONFIG_DIR", *CLAUDE_CREDENTIAL_ENV_VARS):
+        monkeypatch.delenv(name, raising=False)
     # Unsandboxed jobs reap every descendant of the service process, which here is pytest
     # itself. tests/test_sandbox.py exercises the real thing in a child process.
     monkeypatch.setattr("ticket2pr.pipeline.kill_descendants", lambda: 0)

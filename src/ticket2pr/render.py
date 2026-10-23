@@ -9,6 +9,7 @@ from ticket2pr.domain import AgentResult, ChangeSet, PullRequest, TestReport, Ti
 _MAX_SUMMARY_CHARS = 6_000
 _MAX_TEST_TAIL_CHARS = 3_000
 _HTML_START = re.compile(r"<(?=[A-Za-z/!?])")
+_FENCE = re.compile(r"`{3,}|~{3,}")
 
 
 def commit_message(ticket: Ticket) -> str:
@@ -36,7 +37,6 @@ def pr_body(
     summary = _inert(agent.summary[:_MAX_SUMMARY_CHARS]) or "_The agent did not provide a summary._"
     sections = [
         f"Resolves {ticket_ref}: {_inert(ticket.title)}",
-        summary,
         "## Verification\n\n" + _tests_section(tests),
         "## Change size\n\n"
         f"{len(changes.files)} file(s), +{changes.insertions} / -{changes.deletions}",
@@ -46,6 +46,8 @@ def pr_body(
         lines = [f"- Blocked: {_code_span(action)}" for action in agent.denied_actions]
         lines += [f"- Not committed (protected path): {_code_span(path)}" for path in excluded]
         sections.append("## Guardrail events\n\n" + "\n".join(lines))
+    # Last, so nothing the agent writes (fake headings, layout tricks) can hide ours.
+    sections.append("## Agent summary\n\n" + summary)
     sections.append("---\n_Opened by ticket2pr. Review it like any other contribution._")
     return "\n\n".join(sections)
 
@@ -112,7 +114,8 @@ def tracker_comment(
 
 
 def _inert(markdown: str) -> str:
-    """Untrusted Markdown (agent text, ticket title) without images, raw HTML or ``[]`` links.
+    """Untrusted Markdown (agent text, ticket title) without images, raw HTML, fenced blocks
+    or ``[]`` links.
 
     The ticket can steer the agent, and GitHub fetches every image of a PR body for each
     viewer: an image URL could carry repository data out. Escaping every ``[`` (after the
@@ -121,6 +124,9 @@ def _inert(markdown: str) -> str:
     the escapes also show inside code blocks; parse the Markdown if that ever matters.
     """
     escaped = markdown.replace("\\", "\\\\").replace("[", "\\[")
+    # No fenced blocks either: GitHub renders some (mermaid, geojson...) with remote content.
+    # (Every character escaped: one escape would leave a shorter, still valid fence.)
+    escaped = _FENCE.sub(lambda run: "".join(f"\\{char}" for char in run.group()), escaped)
     return _HTML_START.sub("&lt;", escaped)
 
 

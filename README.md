@@ -11,15 +11,74 @@ Add the `ticket2pr` label to a ticket. A few minutes later the ticket has a comm
 pull request that contains the fix, tests that pass, and a line saying exactly what it cost.
 
 ```text
-PROJ-42 → succeeded
-PR: https://github.com/acme/shop/pull/318
-Cost $0.84 · 412,903 tokens · 23 turns
+ticket2pr opened a pull request: https://github.com/acme/shop/pull/318
+
+Tests pass (`python3 -m pytest -q`).
+
+- Cost: $0.84
+- Tokens: 412,903
+- Agent turns: 23
 ```
 
 ticket2pr is a small, auditable harness around the
 [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk). The model writes the code;
 ticket2pr decides what it may touch, how much it may spend, whether the result is
 trustworthy, and what reviewers see.
+
+## En bref (FR)
+
+### À quoi ça sert
+
+Un ticket Jira devient une **pull request GitHub prête à relire**, sans qu'un développeur écrive le code.
+Un agent IA (Claude) lit le ticket, modifie le dépôt, lance les tests, puis ouvre la PR.
+Chaque PR indique exactement ce qu'elle a coûté.
+
+### Le besoin
+
+Une équipe accumule des petits tickets clairs : bugs simples, petites évolutions, corrections de tests.
+Ils prennent du temps aux développeurs pour peu de valeur. ticket2pr les traite automatiquement, mais sans risque :
+
+- le code tourne isolé : sandbox, aucun secret visible par l'agent ;
+- le budget est plafonné : dollars et nombre de tours par ticket ;
+- **un humain relit toujours** : ticket2pr ouvre la PR, il ne la fusionne jamais.
+
+### Input → Output
+
+| | Contenu |
+|---|---|
+| **Input** | Un ticket Jira avec le label `ticket2pr` (titre + description), et le dépôt GitHub associé au projet (`T2P_REPOS`, ex. `{"SHOP": "acme/shop"}`). |
+| **Output** | Une **branche** `ticket2pr/<clé>` et une **PR** qui contient le résumé du changement, le résultat des tests, la taille du diff, le coût, les tokens et les tours. La PR est en *draft* si les tests échouent ou n'ont pas été lancés. |
+| **Output (Jira)** | Un **commentaire sur le ticket** : lien vers la PR, statut des tests, coût. En cas d'échec, la raison. |
+| **Historique** | Une base SQLite des jobs (statut, coût, lien PR), lisible avec `ticket2pr jobs` ou `GET /jobs`. |
+
+### Comment on l'utilise concrètement
+
+**1. Essai local, sans Jira ni GitHub**
+
+```bash
+make install
+make eval                                             # gratuit : vérifie que tout marche
+export ANTHROPIC_API_KEY=sk-ant-...
+uv run ticket2pr eval --agent claude --task paginate  # vrai agent, environ 0,20 $
+```
+
+**2. En production (service)**
+
+```bash
+cp .env.example .env      # tokens Jira, GitHub et Anthropic, mapping projet → dépôt
+uv run ticket2pr doctor   # vérifie la configuration
+uv run ticket2pr serve    # ou : docker compose up --build
+```
+
+Ensuite, dans Jira, créer un webhook vers `https://<host>/webhooks/jira` avec le même secret.
+
+**3. Au quotidien**
+
+1. Un chef de projet ou un développeur ajoute le label `ticket2pr` au ticket.
+2. Quelques minutes plus tard, un commentaire sur le ticket donne le lien de la PR.
+3. Un développeur relit la PR, la corrige si besoin, puis la fusionne.
+
+Pour un seul ticket, à la main : `uv run ticket2pr run SHOP-101`.
 
 ## Why it is different from "an LLM in a loop"
 
