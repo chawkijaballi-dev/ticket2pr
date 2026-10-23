@@ -15,13 +15,22 @@ from urllib.parse import unquote, urlsplit
 
 from pydantic import SecretStr
 
-from ticket2pr.config import PROXY_ENV_VARS, Settings
+from ticket2pr.config import (
+    CLAUDE_CREDENTIAL_ENV_VARS,
+    OTHER_CREDENTIAL_ENV_VARS,
+    PROXY_ENV_VARS,
+    Settings,
+    agent_env_kept,
+)
 
 MASK = "REDACTED"  # no brackets: it lands after _inert and must not form a [link](url)
 _MIN_SECRET_LEN = 8  # shorter values would mask ordinary words
-# Environment variables that hold credentials (ANTHROPIC_API_KEY, GH_TOKEN, AWS_SECRET_ACCESS_KEY,
-# ANTHROPIC_CUSTOM_HEADERS, OTEL_EXPORTER_OTLP_HEADERS...): the agent may see some of them.
-_CREDENTIAL_NAME = re.compile(r"KEY|TOKEN|SECRET|PASSWORD|PASSPHRASE|HEADERS", re.IGNORECASE)
+# Variables the agent sees that hold credentials (AWS_SECRET_ACCESS_KEY, ANTHROPIC_CUSTOM_HEADERS,
+# OTEL_EXPORTER_OTLP_HEADERS...): whole words only, so UV_KEYRING_PROVIDER is not one.
+_CREDENTIAL_NAME = re.compile(
+    r"(?:^|_)(?:KEY|TOKEN|SECRET|PASSWORD|PASSPHRASE|HEADERS)(?:_|$)", re.IGNORECASE
+)
+_AUTH_SCHEME = re.compile(r"(?:bearer|basic|token)\s+(\S+)", re.IGNORECASE)
 # Header lists: "k=v,k2=v2" (OTLP) or "Name: value" lines (ANTHROPIC_CUSTOM_HEADERS).
 _HEADER_VALUE = re.compile(r"[^\n,=:]+[=:]\s*([^\n,]+)")
 
@@ -39,11 +48,15 @@ class Redactor:
             for name in type(settings).model_fields
             if isinstance(value := getattr(settings, name), SecretStr)
         ]
+        known = (*CLAUDE_CREDENTIAL_ENV_VARS, *OTHER_CREDENTIAL_ENV_VARS)
         for name, value in os.environ.items():
-            if _CREDENTIAL_NAME.search(name):
+            # A variable the agent never sees cannot reach the diff: no false positives from it.
+            if name in known or (agent_env_kept(name) and _CREDENTIAL_NAME.search(name)):
                 for part in (value, *_HEADER_VALUE.findall(value)):
                     decoded = unquote(part.strip())  # OTLP headers are percent-encoded
-                    values += [part, decoded, decoded.rpartition(" ")[2]]  # "Bearer <token>"
+                    values += [part, decoded]
+                    if scheme := _AUTH_SCHEME.fullmatch(decoded):  # "Bearer <token>"
+                        values.append(scheme.group(1))
         for name in PROXY_ENV_VARS:
             proxy = os.environ.get(name, "")
             with suppress(ValueError):

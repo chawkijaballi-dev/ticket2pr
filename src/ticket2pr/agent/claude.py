@@ -28,47 +28,20 @@ from ticket2pr.agent.base import AgentTask
 from ticket2pr.agent.guard import Policy
 from ticket2pr.agent.prompts import SYSTEM_PROMPT, build_prompt
 from ticket2pr.config import (
-    NETWORK_ENV_VARS,
     Effort,
-    enabled_cloud_providers,
+    agent_env_kept,
     secret_env_names,
 )
 from ticket2pr.domain import AgentOutcome, AgentResult, Usage
 from ticket2pr.sandbox import ensure_sandbox_available
 
 logger = logging.getLogger(__name__)
-# The worker's environment reaches Claude Code and the agent's commands: everything else is
-# blanked, so a credential ticket2pr does not know about (DATABASE_URL...) cannot end up in
-# the diff. Kept: the basics, and Claude Code's own settings (it reads unprefixed ones too).
-_ENV_KEPT = frozenset(
-    {
-        *("PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TERM", "TZ", "TMPDIR"),
-        *NETWORK_ENV_VARS,
-        *("UV_CACHE_DIR", "RUSTUP_HOME", "CARGO_HOME", "PYENV_ROOT"),
-        *("MAX_THINKING_TOKENS", "MAX_MCP_OUTPUT_TOKENS"),
-    }
-)
-_ENV_KEPT_PREFIXES = ("LC_", "CLAUDE_", "ANTHROPIC_", "DISABLE_", "BASH_", "OTEL_")
-# A cloud provider's credentials only when Claude Code is set to use that provider.
-_PROVIDER_ENV = {
-    "CLAUDE_CODE_USE_BEDROCK": ("AWS_",),
-    "CLAUDE_CODE_USE_VERTEX": ("CLOUD_ML_", "VERTEX_", "GOOGLE_", "GCLOUD_"),
-}
-
-
-def _blanked_env() -> dict[str, str]:
-    providers = enabled_cloud_providers()
-    kept = _ENV_KEPT_PREFIXES + tuple(
-        prefix for flag in providers for prefix in _PROVIDER_ENV[flag]
-    )
-    return {name: "" for name in os.environ if name not in _ENV_KEPT and not name.startswith(kept)}
-
-
 # Claude Code's shared temp dirs: /tmp/claude-<uid> since CLI 2.1.309, /tmp/claude before.
 _SHARED_TMP = ["/tmp/claude", f"/tmp/claude-{os.getuid()}"]  # noqa: S108
-# Host IPC sockets (the systemd/D-Bus user bus): `systemd-run --user` would start a process
-# outside the sandbox, should Claude Code's seccomp filter for unix sockets be unavailable.
-_HOST_IPC = ["/run/user", "/run/dbus"]
+# Host IPC sockets, as in the test sandbox (the D-Bus user bus, systemd-resolved, docker.sock):
+# `systemd-run --user` or a resolver query would get out, should Claude Code's seccomp filter
+# for unix sockets be unavailable. Its Bash needs none: network goes through Claude Code's proxy.
+_HOST_IPC = ["/run", "/var/run"]
 
 # Built-in tools the agent may use. Web access and sub-agents are left out: the ticket and the
 # repository are the whole context, and fewer tools means fewer ways to exfiltrate data.
@@ -239,7 +212,7 @@ class ClaudeAgent:
             # boundary and Claude Code's credentials are reachable anyway (docs/security.md).
             # PYTHONDONTWRITEBYTECODE keeps the agent's own test runs from leaving caches behind.
             env={
-                **_blanked_env(),
+                **{name: "" for name in os.environ if not agent_env_kept(name)},
                 **dict.fromkeys(secret_env_names(), ""),
                 **({"ANTHROPIC_API_KEY": self._api_key} if self._api_key else {}),
                 **({"CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"} if self._sandbox else {}),

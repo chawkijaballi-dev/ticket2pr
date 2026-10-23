@@ -618,6 +618,7 @@ def test_redactor_masks_proxy_passwords(
 def test_redactor_masks_provider_credentials(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")  # else the agent never sees AWS_*
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMIK7MDENG")
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", "authorization=Bearer otlp-token-123,x=1")
     redactor = Redactor.from_settings(settings)
@@ -627,6 +628,18 @@ def test_redactor_masks_provider_credentials(
     assert Redactor.from_settings(settings).redact("Bearer gw-tok-456") == MASK
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", "Authorization=Bearer%20otlp-enc-789")
     assert Redactor.from_settings(settings).redact("token otlp-enc-789") == f"token {MASK}"
+
+
+def test_redactor_ignores_variables_that_are_not_credentials(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    monkeypatch.setenv("UV_KEYRING_PROVIDER", "subprocess")  # KEY, but not a whole word
+    monkeypatch.setenv("SERVICE_API_KEY", "blanked-for-the-agent")  # never seen by the agent
+    monkeypatch.setenv("ANTHROPIC_CUSTOM_HEADERS", "X-Team: platform engineering")
+    redactor = Redactor.from_settings(settings)
+    assert not redactor.contains_secret("import subprocess")
+    assert not redactor.contains_secret("blanked-for-the-agent")
+    assert redactor.redact("software engineering") == "software engineering"
 
 
 def test_redactor_masks_a_secret_cut_by_a_tail() -> None:

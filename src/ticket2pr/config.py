@@ -222,6 +222,34 @@ NETWORK_ENV_VARS = (
     *PROXY_ENV_VARS,
     *("SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE"),
 )
+# The worker's environment reaches Claude Code and the agent's commands: everything else is
+# blanked, so a credential ticket2pr does not know about (DATABASE_URL...) cannot end up in
+# the diff. Kept: the basics, and Claude Code's own settings (it reads unprefixed ones too).
+_AGENT_ENV_KEPT = frozenset(
+    {
+        *("PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TERM", "TZ", "TMPDIR"),
+        *NETWORK_ENV_VARS,
+        *("UV_CACHE_DIR", "RUSTUP_HOME", "CARGO_HOME", "PYENV_ROOT"),
+        *("MAX_THINKING_TOKENS", "MAX_MCP_OUTPUT_TOKENS"),
+    }
+)
+_AGENT_ENV_KEPT_PREFIXES = ("LC_", "CLAUDE_", "ANTHROPIC_", "DISABLE_", "BASH_", "OTEL_")
+# A cloud provider's credentials only when Claude Code is set to use that provider.
+_PROVIDER_ENV_PREFIXES = {
+    "CLAUDE_CODE_USE_BEDROCK": ("AWS_",),
+    "CLAUDE_CODE_USE_VERTEX": ("CLOUD_ML_", "VERTEX_", "GOOGLE_", "GCLOUD_"),
+}
+
+
+def agent_env_kept(name: str) -> bool:
+    """Whether the agent (Claude Code and its commands) sees this worker variable."""
+    providers = enabled_cloud_providers()
+    prefixes = _AGENT_ENV_KEPT_PREFIXES + tuple(
+        prefix for flag in providers for prefix in _PROVIDER_ENV_PREFIXES[flag]
+    )
+    return name in _AGENT_ENV_KEPT or name.startswith(prefixes)
+
+
 # Credentials of other tools that may sit in the worker's environment: blanked for the agent.
 OTHER_CREDENTIAL_ENV_VARS = ("GITHUB_TOKEN", "GH_TOKEN")
 

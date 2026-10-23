@@ -25,7 +25,9 @@ class RepoHost(Protocol):
 
     async def open_or_update_pr(
         self, repo: str, *, head: str, base: str, title: str, body: str, draft: bool
-    ) -> PullRequest: ...
+    ) -> PullRequest:
+        """``head`` is a branch of ``repo``, or ``owner:branch`` of a fork (fork mode)."""
+        ...
 
     async def aclose(self) -> None: ...
 

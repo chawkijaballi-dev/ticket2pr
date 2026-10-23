@@ -69,8 +69,8 @@ All notable changes to this project are documented here. The format follows
   (`DATABASE_URL`...) are blanked; Claude Code's own settings are kept, and AWS or Google
   Cloud variables only with Bedrock or Vertex. Test runs with network access get the proxy and CA settings too; a proxy URL's password is masked in published text. A secret cut at the start of the test output tail
   is masked too.
-- The values of every environment variable named like a credential (`*KEY*`, `*TOKEN*`,
-  `*SECRET*`, `*PASSWORD*`, `*PASSPHRASE*`, `*HEADERS*`, header values decoded) and a proxy
+- The values of every variable the agent can see whose name has the word `KEY`, `TOKEN`,
+  `SECRET`, `PASSWORD`, `PASSPHRASE` or `HEADERS` (header values decoded) and a proxy
   URL's user or password (with or without a scheme) are masked and refused in commits like
   other secrets. Bedrock/Vertex flags count only as 1/true/yes/on. The agent's builds get
   `SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0` like the test runs. `doctor` accepts a Bedrock or Vertex setup.
@@ -78,8 +78,8 @@ All notable changes to this project are documented here. The format follows
 - Closing keywords followed by an issue URL (`Fixes https://github.com/o/r/issues/7`) are
   neutralised too.
 - A configured secret in the ticket title is masked in the commit message and PR title too.
-- The agent's Bash sandbox also denies `/run/user` and `/run/dbus` (host IPC sockets), as the
-  test sandbox already did.
+- The agent's Bash sandbox also denies `/run` and `/var/run` (host IPC sockets), as the test
+  sandbox already did.
 - Without the sandbox, leftover processes (including a "zombie" whose other threads still run)
   are frozen then killed until none is left, never blocking past the deadline; a job
   refuses to publish if any survives. The eval harness ignores the developer's git config.

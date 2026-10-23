@@ -181,7 +181,7 @@ def doctor() -> None:
     )
     checks = {
         "git on PATH": shutil.which("git") is not None,
-        "Claude credentials (API key, auth token or `claude` login)": _has_claude_credentials(
+        "Claude credentials (key, token, `claude` login, Bedrock/Vertex)": _has_claude_credentials(
             settings
         ),
         "Jira configured": bool(

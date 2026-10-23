@@ -68,7 +68,8 @@ the failing output (tail) is passed back as feedback.
 - **Another tracker** (Linear, GitHub Issues): implement `Tracker` (`get_ticket`, `comment`,
   `aclose`) and wire it in `runtime.build_runtime`.
 - **Another forge** (GitLab): implement `RepoHost` (`clone_url`, `git_auth`,
-  `open_or_update_pr`, `aclose`).
+  `open_or_update_pr`, `aclose`). Fork mode is GitHub-shaped: the pipeline pushes to
+  `<fork_owner>/<name>` and passes `head` as `owner:branch`.
 - **Another agent**: implement `CodingAgent.run(task) -> AgentResult`. The pipeline's
   guardrails (git hygiene, protected paths, tests, budget accounting) apply unchanged.
 - **A distributed queue**: replace `JobQueue`'s `submit`/`enqueue`/`start`/`stop` (restart
