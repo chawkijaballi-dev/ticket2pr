@@ -408,6 +408,9 @@ def test_pr_body_without_tests_or_summary() -> None:
 def test_tracker_comment_with_pr(tests: TestReport, expected: str) -> None:
     text = render.tracker_comment(published=(PR, tests), usage=USAGE)
     assert expected in text
+    # Only the cost: tokens and turns are numbers the agent could steer for the reporter.
+    assert "1,250" not in text
+    assert "turn" not in text
     assert "$1.23" in text
     assert "opened a pull request" in text
 
@@ -424,6 +427,7 @@ def test_tracker_comment_names_drafts_and_capped_costs() -> None:
 
 def test_tracker_comment_on_failure() -> None:
     text = render.tracker_comment(published=None, usage=USAGE, error="boom")
+    assert "turn" not in text
     assert "could not open a pull request: ` boom `" in text  # inert: agent text can be in it
     assert "unknown error" in render.tracker_comment(published=None, usage=USAGE)
     link = render.tracker_comment(published=None, usage=USAGE, error="a`[x](https://e.test)")

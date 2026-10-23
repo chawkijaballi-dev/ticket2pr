@@ -1,7 +1,7 @@
 """Minimal Atlassian Document Format (ADF) conversion.
 
 Jira Cloud's REST API v3 returns and expects rich text as ADF JSON. The agent only needs
-readable text, and our comments only use paragraphs, bullet lists, links and inline code,
+readable text, and our comments only use paragraphs, links and inline code,
 so a full converter is unnecessary.
 """
 
@@ -67,19 +67,11 @@ _ATOMS: dict[str, Callable[[dict[str, Any]], str]] = {
 def from_markdown(markdown: str) -> dict[str, Any]:
     """Build an ADF document from the small Markdown subset ticket2pr writes.
 
-    Supported: paragraphs (blank-line separated), ``- `` bullet lists, ``[text](url)`` links
-    and inline code. Anything else is kept as literal text.
+    Supported: paragraphs (blank-line separated), ``[text](url)`` links and inline code.
+    Anything else is kept as literal text.
     """
-    blocks: list[dict[str, Any]] = []
-    for chunk in re.split(r"\n\s*\n", markdown.strip()):
-        lines = chunk.splitlines()
-        if lines and all(line.lstrip().startswith("- ") for line in lines):
-            items = [
-                {"type": "listItem", "content": [_paragraph(line.lstrip()[2:])]} for line in lines
-            ]
-            blocks.append({"type": "bulletList", "content": items})
-        elif chunk:
-            blocks.append(_paragraph(chunk))
+    chunks = re.split(r"\n\s*\n", markdown.strip())
+    blocks = [_paragraph(chunk) for chunk in chunks if chunk]
     return {"type": "doc", "version": 1, "content": blocks}
 
 

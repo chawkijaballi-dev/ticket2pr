@@ -65,7 +65,7 @@ For a single ticket by hand: `uv run ticket2pr run SHOP-101`.
 
 | Concern | What ticket2pr does |
 |---|---|
-| **Cost** | Hard per-ticket budget (`max_budget_usd`) enforced by the SDK and shared across retries; tokens and dollars are reported on the PR, on the ticket and in the job history. |
+| **Cost** | Hard per-ticket budget (`max_budget_usd`) enforced by the SDK and shared across retries; tokens and dollars are reported on the PR and in the job history; the ticket gets the cost. |
 | **Correctness** | Runs the repository's tests after the agent; a failing run gets one retry with the failure output; still red means a **draft** PR (kept in sync on re-runs; a regular PR flagged as failing when drafts are disabled with `T2P_DRAFT_ON_TEST_FAILURE=false` or unavailable on the GitHub plan), never a green one. |
 | **Isolation** | Fresh clone per job; the agent's Bash *and* the repository's tests run in a bubblewrap sandbox (reads confined to the workspace, no host IPC, network allowlist / off), which **fails closed** if it cannot start; a `PreToolUse` guard; no repository settings or hooks loaded; credentials scrubbed from every environment the agent or the tests can see. |
 | **CI exposure** | Optional fork mode pushes to a bot-owned fork and opens cross-repository PRs, so the target repository's CI never runs unreviewed agent code with its secrets. |

@@ -78,7 +78,7 @@ def test_unbalanced_quotes_fall_back_to_plain_split(policy: Policy) -> None:
         ("Edit", ".github/workflows/ci.yml", True),
         ("Write", "config/.env", True),
         ("Write", ".env", True),
-        ("MultiEdit", "certs/server.pem", True),
+        ("Edit", "certs/server.pem", True),
         ("Write", "secrets.txt", True),
         ("Read", "/etc/passwd", True),
         ("Read", "../outside.txt", True),
@@ -107,7 +107,7 @@ def test_symlink_escape_is_blocked(policy: Policy, tmp_path: Path) -> None:
 
 
 def test_tools_without_paths_pass(policy: Policy) -> None:
-    assert policy.check("TodoWrite", {"todos": []}) is None
+    assert policy.check("Bash", {"command": "ls"}) is None
 
 
 @pytest.mark.parametrize(

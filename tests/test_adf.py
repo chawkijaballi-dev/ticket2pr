@@ -76,13 +76,12 @@ def test_to_text_renders_common_nodes() -> None:
     assert text.endswith("kept")
 
 
-def test_from_markdown_builds_paragraphs_lists_links_and_code() -> None:
+def test_from_markdown_builds_paragraphs_links_and_code() -> None:
     doc = adf.from_markdown(
-        "Opened [PR #3](https://github.com/a/b/pull/3)\nsecond line\n\n"
-        "- Cost: `$1.20`\n- Turns: `4`"
+        "Opened [PR #3](https://github.com/a/b/pull/3)\nsecond line\n\nCost: `$1.20`"
     )
     assert doc["type"] == "doc"
-    paragraph, bullets = doc["content"]
+    paragraph, cost = doc["content"]
     assert paragraph["type"] == "paragraph"
     link = paragraph["content"][1]
     assert link == {
@@ -91,10 +90,8 @@ def test_from_markdown_builds_paragraphs_lists_links_and_code() -> None:
         "marks": [{"type": "link", "attrs": {"href": "https://github.com/a/b/pull/3"}}],
     }
     assert {"type": "hardBreak"} in paragraph["content"]
-    assert bullets["type"] == "bulletList"
-    first_item = bullets["content"][0]["content"][0]["content"]
-    assert first_item[0] == {"type": "text", "text": "Cost: "}
-    assert first_item[1] == {"type": "text", "text": "$1.20", "marks": [{"type": "code"}]}
+    assert cost["content"][0] == {"type": "text", "text": "Cost: "}
+    assert cost["content"][1] == {"type": "text", "text": "$1.20", "marks": [{"type": "code"}]}
 
 
 def test_round_trip_keeps_the_text() -> None:

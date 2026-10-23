@@ -22,7 +22,7 @@ layers above it can fail.
 | Control | Where | Threats |
 |---|---|---|
 | Ticket fenced as untrusted data in the prompt; the rules are restated after every untrusted block | `agent/prompts.py` | T1 |
-| Tool allowlist (`Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, `Bash`, `TodoWrite`); it is the agent's whole tool set (`tools`), so no web tools, sub-agents, background `Monitor`, cron or remote triggers exist for it; no MCP server, not even the operator's claude.ai connectors (`strict_mcp_config`); the guard denies any other tool name by default | `agent/claude.py` | T1, T2 |
+| Tool allowlist (`Read`, `Write`, `Edit`, `Glob`, `Grep`, `Bash`); it is the agent's whole tool set (`tools`), so no web tools, sub-agents, background `Monitor`, cron or remote triggers exist for it; no MCP server, not even the operator's claude.ai connectors (`strict_mcp_config`); the guard denies any other tool name by default | `agent/claude.py` | T1, T2 |
 | `setting_sources=[]`: no user/project/local settings, so no repository hooks or permissions | `agent/claude.py` | T3 |
 | ticket2pr's secrets blanked in the agent's environment, and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` so Claude Code strips its own credentials (`ANTHROPIC_API_KEY`, …) from every command the agent runs | `config.py`, `agent/claude.py` | T2 |
 | Agent's Bash in Claude Code's bubblewrap sandbox with a network allowlist, no unsandboxed escape, and `failIfUnavailable` (the CLI refuses to start rather than run Bash unsandboxed) | `agent/claude.py` | T2, T3 |

@@ -36,7 +36,7 @@ _SHARED_TMP = "/tmp/claude"  # noqa: S108 - Claude Code's default, shared by eve
 
 # Built-in tools the agent may use. Web access and sub-agents are left out: the ticket and the
 # repository are the whole context, and fewer tools means fewer ways to exfiltrate data.
-ALLOWED_TOOLS = ["Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "Bash", "TodoWrite"]
+ALLOWED_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
 DISALLOWED_TOOLS = ["WebFetch", "WebSearch", "Task", "NotebookEdit"]
 
 _OUTCOMES = {
