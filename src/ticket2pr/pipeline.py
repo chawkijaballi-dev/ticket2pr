@@ -174,7 +174,12 @@ class Pipeline:
         # From here on, the agent's workspace is data, not a repository we trust.
         await self._reap_untrusted_processes()
         publish = await GitRepo.clone(
-            clone_url, job_dir / "publish", branch=settings.base_branch, auth=auth
+            clone_url,
+            job_dir / "publish",
+            branch=settings.base_branch,
+            auth=auth,
+            # A fork may lag the target: a shallow history could not be pushed to it.
+            depth=None if settings.fork_owner else 50,
         )
         publish_config = publish.config_bytes()
         try:

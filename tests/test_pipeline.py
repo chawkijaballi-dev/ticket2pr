@@ -690,6 +690,22 @@ async def test_fork_mode_pushes_to_the_fork_and_opens_a_cross_repo_pr(
     assert pr["head"] == f"ticket2pr-bot:{_branch(job)}"
 
 
+async def test_fork_mode_pushes_to_a_fork_far_behind_the_target(
+    make_pipeline: MakePipeline, store: JobStore, repos_dir: Path
+) -> None:
+    """A shallow publish clone could not be pushed to a fork missing its boundary commit."""
+    fork = repos_dir / "ticket2pr-bot" / "calc"
+    git(repos_dir, "clone", "-q", str(repos_dir / REPO), str(fork))
+    git(fork, "config", "receive.denyCurrentBranch", "ignore")
+    for index in range(60):  # the target moves on; nobody syncs the fork
+        git(repos_dir / REPO, "commit", "-q", "--allow-empty", "-m", f"upstream {index}")
+
+    job = await make_pipeline(ScriptedAgent([fix_add]), fork_owner="ticket2pr-bot").run(
+        claim(store, "CALC-1")
+    )
+    assert job.status is JobStatus.SUCCEEDED, job.error
+
+
 async def test_publish_config_change_blocks_the_push(
     make_pipeline: MakePipeline,
     store: JobStore,

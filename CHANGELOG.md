@@ -25,6 +25,7 @@ All notable changes to this project are documented here. The format follows
   or committer email than `T2P_COMMIT_AUTHOR_EMAIL` (a reviewer's fixups or amends are never
   discarded); the push itself uses `--force-with-lease`, so a concurrent push is not lost.
 - `T2P_SANDBOX_READONLY_PATHS` expands `~`.
+- Fork mode publishes from a full clone, so a fork far behind the target can still be pushed to.
 - The agent's tool set is exactly the allowlist (no `Monitor`, cron, remote triggers or
   ToolSearch), with no MCP server; the guard denies any other tool. Ticket comments show
   the cost but no longer tokens or turns.

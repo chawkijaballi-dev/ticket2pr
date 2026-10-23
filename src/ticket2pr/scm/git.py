@@ -66,8 +66,15 @@ class GitRepo:
 
     @classmethod
     async def clone(
-        cls, url: str, dest: Path, *, branch: str, auth: GitAuth | None = None, depth: int = 50
+        cls,
+        url: str,
+        dest: Path,
+        *,
+        branch: str,
+        auth: GitAuth | None = None,
+        depth: int | None = 50,
     ) -> GitRepo:
+        """Clone ``branch`` alone; ``depth=None`` for the full history."""
         dest = await asyncio.to_thread(dest.resolve)  # git runs in dest.parent
         dest.parent.mkdir(parents=True, exist_ok=True)
         await _git(
@@ -75,7 +82,7 @@ class GitRepo:
             "clone",
             [
                 "--quiet",
-                f"--depth={depth}",
+                *([f"--depth={depth}"] if depth else []),
                 "--single-branch",
                 "--no-tags",
                 f"--branch={branch}",
@@ -162,7 +169,7 @@ class GitRepo:
         await self._run("fetch", "--quiet", "--depth=1", url, f"refs/heads/{branch}", env=env)
         sha, author, committer = (
             await self._run("log", "-1", "--format=%H%n%ae%n%ce", "FETCH_HEAD")
-        ).split()
+        ).split("\n")[:3]
         return sha, author, committer
 
     async def push(
