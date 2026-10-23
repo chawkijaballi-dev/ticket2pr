@@ -802,3 +802,18 @@ async def test_unsandboxed_jobs_reap_on_failure_and_before_cloning(
 )
 def test_ticket_only_sees_errors_ticket2pr_worded(exc: Exception, public: str) -> None:
     assert _public_error(exc, str(exc)).startswith(public)
+
+
+async def test_sandbox_mount_stubs_are_not_committed(
+    make_pipeline: MakePipeline, store: JobStore, repos_dir: Path
+) -> None:
+    def fix_and_leave_stubs(task: AgentTask) -> None:
+        fix_add(task)
+        for name in ("package.json", ".npmrc", ".gitmodules"):
+            (task.workspace / name).touch()  # what Claude Code's sandbox leaves behind
+        (task.workspace / ".claude" / "agents").mkdir(parents=True)
+        (task.workspace / "empty_module.py").touch()  # the agent's own empty file stays
+
+    job = await make_pipeline(ScriptedAgent([fix_and_leave_stubs])).run(claim(store, "CALC-1"))
+    files = git(repos_dir / REPO, "show", "--name-only", "--format=", _branch(job)).split()
+    assert sorted(files) == ["calc.py", "empty_module.py"]
