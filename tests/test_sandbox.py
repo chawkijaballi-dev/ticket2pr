@@ -273,6 +273,20 @@ async def test_networked_sandbox_keeps_the_resolver_config(workspace: Path) -> N
 
 
 @needs_bwrap
+async def test_sandboxed_tests_cannot_create_a_repository(
+    workspace: Path, sandbox: TestSandbox
+) -> None:
+    report = await run_tests(
+        "git init -q . && git config core.fsmonitor 'touch pwned'",
+        workspace,
+        timeout_s=30,
+        sandbox=sandbox,
+    )
+    assert not report.passed
+    assert not (workspace / ".git").is_dir()
+
+
+@needs_bwrap
 async def test_sandbox_tmpdir_exists(
     workspace: Path, sandbox: TestSandbox, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

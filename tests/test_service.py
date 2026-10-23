@@ -198,6 +198,8 @@ def test_webhook_deduplicates_in_flight_jobs(client: TestClient) -> None:
     response = _post(client, _event())
     assert response.status_code == 200
     assert "already has a job" in response.json()["reason"]
+    runtime.store.fail_interrupted()  # the job ends; a replay of that delivery must not start one
+    assert _post(client, _event()).json()["reason"] == "duplicate delivery"
 
 
 def test_webhook_refuses_replays(client: TestClient) -> None:

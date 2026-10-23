@@ -371,6 +371,22 @@ def test_pr_body_title_cannot_use_a_reference_from_the_summary() -> None:
     assert "\n\\[s]: https://e.test/x" in body
 
 
+def test_inert_text_mentions_and_references_nobody() -> None:
+    summary = "Ping @acme/everyone and @bob. Fixes #12, closes owner/repo#40.\n\n## Notes"
+    body = render.pr_body(
+        ticket=TICKET,
+        agent=AgentResult(outcome=AgentOutcome.COMPLETED, summary=summary),
+        usage=USAGE,
+        changes=ChangeSet(files=("a.py",)),
+        tests=TestReport(command="pytest", passed=True),
+        model="m",
+    )
+    for reference in ("@acme/everyone", "@bob", "#12", "repo#40"):
+        assert reference not in body
+    assert "@\u200bbob" in body
+    assert "\n## Notes" in body  # headings still render
+
+
 def test_inert_text_cannot_unescape_a_link() -> None:
     body = render.pr_body(
         ticket=TICKET,

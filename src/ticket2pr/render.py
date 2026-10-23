@@ -10,6 +10,9 @@ _MAX_SUMMARY_CHARS = 6_000
 _MAX_TEST_TAIL_CHARS = 3_000
 _HTML_START = re.compile(r"<(?=[A-Za-z/!?])")
 _FENCE = re.compile(r"`{3,}|~{3,}")
+# @user, @org/team, #123, owner/repo#45 and "Fixes #12": a zero-width space after @ or #
+# keeps the text readable but stops mentions, cross-references and closing keywords.
+_REFERENCE = re.compile(r"([@#])(?=[\w/-])")
 
 
 def commit_message(ticket: Ticket) -> str:
@@ -127,6 +130,7 @@ def _inert(markdown: str) -> str:
     # No fenced blocks either: GitHub renders some (mermaid, geojson...) with remote content.
     # (Every character escaped: one escape would leave a shorter, still valid fence.)
     escaped = _FENCE.sub(lambda run: "".join(f"\\{char}" for char in run.group()), escaped)
+    escaped = _REFERENCE.sub("\\1\u200b", escaped)
     return _HTML_START.sub("&lt;", escaped)
 
 

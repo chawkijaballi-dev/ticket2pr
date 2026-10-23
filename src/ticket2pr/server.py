@@ -98,12 +98,12 @@ def create_app(
         key, reason = trigger_from_event(payload, settings.trigger_label)
         if key is not None and (reason := deliveries.refusal(body, payload)):
             key = None
+        if key is not None:  # whether or not it starts a job: a replay later must not either
+            deliveries.remember(body)
         if key is None:
             return JSONResponse({"accepted": False, "reason": reason}, status.HTTP_200_OK)
         queue: JobQueue = request.app.state.queue
         job = queue.submit(key)
-        if job is not None:
-            deliveries.remember(body)
         if job is None:
             return JSONResponse(
                 {"accepted": False, "reason": f"{key} already has a job in progress"},
@@ -189,7 +189,7 @@ def verify_signature(secret: bytes, body: bytes, header: str | None) -> bool:
 
 
 class _Deliveries:
-    """Signed bodies that already started a job (bounded, per process)."""
+    """Signed, triggering bodies already received (bounded, per process)."""
 
     def __init__(self) -> None:
         self._accepted: OrderedDict[str, None] = OrderedDict()

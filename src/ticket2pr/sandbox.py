@@ -114,7 +114,11 @@ class TestSandbox:
             if path.exists():
                 command += ["--ro-bind", str(path), str(path)]
         workspace = workspace.resolve()
-        command += ["--bind", str(workspace), str(workspace), "--chdir", str(workspace), "--"]
+        command += ["--bind", str(workspace), str(workspace)]
+        # An unusable .git (an empty file): the tests can neither read nor create a repository
+        # whose config a later, unsandboxed git (Claude Code's own) would execute.
+        command += ["--ro-bind", "/dev/null", str(workspace / ".git")]
+        command += ["--chdir", str(workspace), "--"]
         return command + argv
 
 

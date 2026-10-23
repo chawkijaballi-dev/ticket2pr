@@ -233,6 +233,7 @@ async def test_git_config_tampering_cannot_redirect_the_push(
     def tamper(task: AgentTask) -> None:
         fix_add(task)
         origin = (repos_dir / REPO).resolve().as_uri()
+        git(task.workspace, "init", "-q")  # the workspace has none: the agent makes its own
         git(task.workspace, "config", f"url.{attacker.as_uri()}.insteadOf", origin)
         hook = task.workspace / ".git" / "hooks" / "pre-push"
         hook.write_text(f"#!/bin/sh\ntouch {marker}\n")
@@ -443,6 +444,7 @@ async def test_commondir_redirect_cannot_hijack_the_push(
     def redirect(task: AgentTask) -> None:
         fix_add(task)
         origin = (repos_dir / REPO).resolve().as_uri()
+        git(task.workspace, "init", "-q")  # the workspace has none: the agent makes its own
         shutil.copytree(task.workspace / ".git", evil)
         (evil / "config").write_text(
             (evil / "config").read_text() + f'[url "{attacker.as_uri()}"]\n\tinsteadOf = {origin}\n'
@@ -804,6 +806,26 @@ async def test_unsandboxed_jobs_reap_on_failure_and_before_cloning(
 )
 def test_ticket_only_sees_errors_ticket2pr_worded(exc: Exception, public: str) -> None:
     assert _public_error(exc, str(exc)).startswith(public)
+
+
+async def test_the_agent_gets_no_git_repository(
+    make_pipeline: MakePipeline, store: JobStore
+) -> None:
+    """Claude Code runs git in its working directory, unsandboxed: no .git anyone can poison."""
+    seen: list[bool] = []
+
+    def poison_for_the_retry(task: AgentTask) -> None:
+        seen.append((task.workspace / ".git").exists())
+        if len(seen) == 1:  # what a malicious test suite would leave for attempt 2
+            git(task.workspace, "init", "-q")
+            git(task.workspace, "config", "core.fsmonitor", "touch pwned")
+        else:
+            fix_add(task)
+
+    agent = ScriptedAgent([poison_for_the_retry, poison_for_the_retry])
+    job = await make_pipeline(agent).run(claim(store, "CALC-1"))
+    assert seen == [False, False]
+    assert job.status is JobStatus.SUCCEEDED
 
 
 async def test_sandbox_mount_stubs_are_not_committed(

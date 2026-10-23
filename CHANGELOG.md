@@ -64,8 +64,11 @@ All notable changes to this project are documented here. The format follows
 - Each job gets its own Claude Code temp directory instead of the shared `/tmp/claude`.
 - Jobs re-enqueued at startup are failed when their ticket key is invalid.
 - Eval reports mark capped costs (a timed-out task counts its budget) as upper bounds.
-- Webhook replays are refused: a signed body that already started a job, or an event older
-  than an hour.
+- Webhook replays are refused: a triggering body already received, or an event older than an
+  hour.
+- The agent's workspace is no longer a git repository, and sandboxed tests cannot create one:
+  Claude Code runs git there itself, outside every sandbox, and would execute planted config.
+- @mentions, #references and closing keywords in agent text no longer notify or close anything.
 - Ticket titles are escaped like agent text, and `[]` links (including reference
   definitions) and fenced blocks in agent text are escaped too. The agent's summary is the
   last section of the PR body.
