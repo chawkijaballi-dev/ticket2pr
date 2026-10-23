@@ -39,7 +39,7 @@ layers above it can fail.
 | Agent-written text and the ticket title are inert in the PR body (no images, raw HTML, fenced blocks or `[]` links: GitHub fetches images, and renders some fenced blocks with remote content, for every viewer; bare URLs still autolink and need a click), and the agent's summary comes last so it cannot hide or fake ticket2pr's sections; ticket comments carry no agent text or git/OS error output, only outcomes ticket2pr words itself and the cost (tokens and turns stay in the PR: exact numbers the agent could steer) | `render.py`, `pipeline.py` | T1, T5 |
 | Each job's Claude Code gets its own temp directory (`CLAUDE_CODE_TMPDIR`, deleted with the job); the shared `/tmp/claude` is denied to its Bash sandbox | `agent/claude.py` | T2 |
 | Per-ticket dollar budget shared across retries (a timed-out or interrupted run counts as its whole budget), turn cap, wall-clock timeout, changed-files cap | `config.py`, `agent/claude.py`, `pipeline.py` | T6 |
-| HMAC-SHA256 webhook signature (constant-time compare), body size limit enforced while reading, label-added trigger, idempotent claims | `server.py`, `store.py` | T7, T6 |
+| HMAC-SHA256 webhook signature (constant-time compare), body size limit enforced while reading, label-added trigger, replays refused (a body that already started a job, remembered per process; events older than an hour), idempotent claims | `server.py`, `store.py` | T7, T6 |
 | Bearer token for the jobs API; endpoint disabled when unset | `server.py` | information disclosure |
 
 For Bash the guard is defence in depth, not the boundary: it parses shell text heuristically

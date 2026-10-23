@@ -11,6 +11,8 @@ import hmac
 import json
 import logging
 import shutil
+import time
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -32,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 _EVENTS = {"jira:issue_created", "jira:issue_updated"}
 _MAX_BODY_BYTES = 1_000_000
+# Jira's signature covers the body only: a captured delivery stays valid. Accepted bodies
+# are remembered (bounded, per process) and old events refused, so replays start nothing.
+_MAX_REMEMBERED_DELIVERIES = 10_000
+_MAX_EVENT_AGE_MS = 60 * 60 * 1000
 
 
 def create_app(
@@ -60,6 +66,7 @@ def create_app(
 
     app = FastAPI(title="ticket2pr", version=__version__, lifespan=lifespan)
     app.state.runtime = runtime
+    deliveries = _Deliveries()
 
     def require_api_token(authorization: Annotated[str | None, Header()] = None) -> None:
         token = settings.api_token.get_secret_value()
@@ -89,10 +96,14 @@ def create_app(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "body is not JSON") from exc
 
         key, reason = trigger_from_event(payload, settings.trigger_label)
+        if key is not None and (reason := deliveries.refusal(body, payload)):
+            key = None
         if key is None:
             return JSONResponse({"accepted": False, "reason": reason}, status.HTTP_200_OK)
         queue: JobQueue = request.app.state.queue
         job = queue.submit(key)
+        if job is not None:
+            deliveries.remember(body)
         if job is None:
             return JSONResponse(
                 {"accepted": False, "reason": f"{key} already has a job in progress"},
@@ -174,6 +185,27 @@ def verify_signature(secret: bytes, body: bytes, header: str | None) -> bool:
         return False
     expected = hmac.new(secret, body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(header.removeprefix("sha256="), expected)
+
+
+class _Deliveries:
+    """Signed bodies that already started a job (bounded, per process)."""
+
+    def __init__(self) -> None:
+        self._accepted: OrderedDict[str, None] = OrderedDict()
+
+    def refusal(self, body: bytes, payload: dict[str, Any]) -> str:
+        """Why this delivery must not start a job, or ``""``."""
+        if hashlib.sha256(body).hexdigest() in self._accepted:
+            return "duplicate delivery"
+        stamp = payload.get("timestamp")  # Jira stamps events in epoch milliseconds
+        if isinstance(stamp, int) and time.time() * 1000 - stamp > _MAX_EVENT_AGE_MS:
+            return "stale event"
+        return ""
+
+    def remember(self, body: bytes) -> None:
+        self._accepted[hashlib.sha256(body).hexdigest()] = None
+        if len(self._accepted) > _MAX_REMEMBERED_DELIVERIES:
+            self._accepted.popitem(last=False)
 
 
 def trigger_from_event(payload: Any, label: str) -> tuple[str | None, str]:

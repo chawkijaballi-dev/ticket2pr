@@ -7,6 +7,7 @@ import hmac
 import json
 import os
 import signal
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -196,6 +197,19 @@ def test_webhook_deduplicates_in_flight_jobs(client: TestClient) -> None:
     response = _post(client, _event())
     assert response.status_code == 200
     assert "already has a job" in response.json()["reason"]
+
+
+def test_webhook_refuses_replays(client: TestClient) -> None:
+    """The signature covers the body only: a captured delivery must not start a second run."""
+    event = _event(timestamp=int(time.time() * 1000))
+    assert _post(client, event).status_code == 202
+    queue: JobQueue = client.app.state.queue  # type: ignore[attr-defined]
+    client.portal.call(queue.join)  # type: ignore[union-attr]
+    replay = _post(client, event)
+    assert replay.status_code == 200
+    assert replay.json()["reason"] == "duplicate delivery"
+    stale = _post(client, _event(timestamp=int(time.time() * 1000) - 2 * 3600 * 1000))
+    assert stale.json()["reason"] == "stale event"
 
 
 def test_jobs_api_auth(client: TestClient) -> None:

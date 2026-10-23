@@ -63,6 +63,8 @@ All notable changes to this project are documented here. The format follows
   comments are a single code span.
 - Each job gets its own Claude Code temp directory instead of the shared `/tmp/claude`.
 - Jobs re-enqueued at startup are failed when their ticket key is invalid.
+- Webhook replays are refused: a signed body that already started a job, or an event older
+  than an hour.
 - Ticket titles are escaped like agent text, and `[]` links (including reference
   definitions) and fenced blocks in agent text are escaped too. The agent's summary is the
   last section of the PR body.
