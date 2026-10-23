@@ -399,7 +399,8 @@ def _public_error(exc: Exception, detail: str) -> str:
 
     The ticket's reporter may not be allowed to read the repository, and git's stderr or an
     OS error can quote file names the agent chose: only messages ticket2pr writes itself
-    (policy, agent outcome, configuration) are shown; the rest stay in the job record.
+    (policy, agent outcome, configuration, stale base branch) are shown; the rest stay in the
+    job record.
     """
     if isinstance(exc, AgentError | PolicyViolationError | ConfigurationError | StaleBaseError):
         return detail

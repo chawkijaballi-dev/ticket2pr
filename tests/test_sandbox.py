@@ -20,6 +20,7 @@ from ticket2pr.redaction import MASK, Redactor
 from ticket2pr.sandbox import (
     TestSandbox,
     _bwrap_works,
+    _probe_bwrap,
     become_subreaper,
     ensure_sandbox_available,
     harden_service_process,
@@ -58,12 +59,43 @@ def test_missing_sandbox_tools(
 
 @needs_bwrap
 def test_bwrap_probe_starts_a_real_sandbox() -> None:
-    assert _bwrap_works.__wrapped__() is True
+    assert _probe_bwrap() is True
 
 
 def test_bwrap_probe_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PATH", "")  # bwrap not found: OSError
-    assert _bwrap_works.__wrapped__() is False
+    assert _probe_bwrap() is False
+
+
+def test_only_a_working_probe_is_remembered(monkeypatch: pytest.MonkeyPatch) -> None:
+    results = iter([False, True])
+    calls: list[bool] = []
+
+    def probe() -> bool:
+        calls.append(True)
+        return next(results)
+
+    monkeypatch.setattr("ticket2pr.sandbox._bwrap_ok", False)
+    monkeypatch.setattr("ticket2pr.sandbox._probe_bwrap", probe)
+    assert _bwrap_works() is False  # e.g. a slow first probe: retried next time
+    assert _bwrap_works() is True
+    assert _bwrap_works() is True
+    assert len(calls) == 2
+
+
+def test_wrap_binds_the_resolver_config_only_with_network(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    resolv = "/run/systemd/resolve/stub-resolv.conf"
+    realpath = os.path.realpath
+    monkeypatch.setattr(
+        "ticket2pr.sandbox.os.path.realpath",
+        lambda path, **kw: resolv if path == "/etc/resolv.conf" else realpath(path, **kw),
+    )
+    monkeypatch.setattr(Path, "is_file", lambda self: str(self) == resolv)
+    networked = TestSandbox(hidden=(), network=True).wrap(["x"], tmp_path)
+    assert ["--ro-bind", resolv, resolv] == networked[networked.index(resolv) - 1 :][:3]
+    assert resolv not in TestSandbox(hidden=()).wrap(["x"], tmp_path)
 
 
 def test_installed_bwrap_that_cannot_start_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -238,8 +270,6 @@ async def test_networked_sandbox_keeps_the_resolver_config(workspace: Path) -> N
         "grep -q nameserver /etc/resolv.conf", workspace, timeout_s=30, sandbox=networked
     )
     assert report.passed, report.output_tail
-    offline = TestSandbox(hidden=())
-    assert "/run/systemd" not in " ".join(offline.wrap(["x"], workspace))
 
 
 @needs_bwrap

@@ -27,8 +27,8 @@ layers above it can fail.
 | ticket2pr's secrets blanked in the agent's environment, and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` so Claude Code strips its own credentials (`ANTHROPIC_API_KEY`, …) from every command the agent runs | `config.py`, `agent/claude.py` | T2 |
 | Agent's Bash in Claude Code's bubblewrap sandbox with a network allowlist, no unsandboxed escape, and `failIfUnavailable` (the CLI refuses to start rather than run Bash unsandboxed) | `agent/claude.py` | T2, T3 |
 | Agent reads confined to the workspace: the sandbox's `filesystem.denyRead` hides the service's home, data and working directories (other jobs, the job database, `.env`, the `claude` login, `CLAUDE_CONFIG_DIR` included) and re-opens only the workspace and toolchains; `permissions.blockReadsOutsideWorkingDirectories` refuses outside reads for the file tools and the Bash commands Claude Code can analyse | `agent/claude.py`, `sandbox.py` | T2 |
-| Repository tests in ticket2pr's bubblewrap sandbox: fresh PID namespace (no other process's `/proc/<pid>/environ`), no network unless `T2P_TEST_NETWORK`, read-only root, writable workspace and private `/tmp` only, an empty `/run` (no host IPC sockets such as the systemd/D-Bus user bus, which would otherwise let `systemd-run --user` start a process outside the sandbox), the service's home, data and working directories hidden, minimal environment, own process group, hard timeout | `sandbox.py`, `verify.py` | T2, T3 |
-| **Fails closed:** Claude Code silently runs Bash unsandboxed when `bwrap`/`socat` are missing, so every job checks them first and is refused (before any clone or spend) when they are absent | `sandbox.py`, `pipeline.py` | T2, T3 |
+| Repository tests in ticket2pr's bubblewrap sandbox: fresh PID namespace (no other process's `/proc/<pid>/environ`), no network unless `T2P_TEST_NETWORK`, read-only root, writable workspace and private `/tmp` only, an empty `/run` (no host IPC sockets such as the systemd/D-Bus user bus, which would otherwise let `systemd-run --user` start a process outside the sandbox; with `T2P_TEST_NETWORK`, only the resolver config is bound back, read-only), the service's home, data and working directories hidden, minimal environment, own process group, hard timeout | `sandbox.py`, `verify.py` | T2, T3 |
+| **Fails closed:** Claude Code silently runs Bash unsandboxed when `bwrap`/`socat` are missing, so every job checks them first, and starts bwrap once with the tests' profile, and is refused (before any clone or spend) when they are absent or cannot create namespaces | `sandbox.py`, `pipeline.py` | T2, T3 |
 | The service process is made non-dumpable (`PR_SET_DUMPABLE=0`), so same-uid processes cannot read its `/proc/<pid>/environ` or memory | `sandbox.py`, `cli.py` | T2 |
 | `PreToolUse` guard: file tools confined to the workspace, `.git/` off limits, protected globs read-only, history/remote/config git commands, environment dumps and background commands blocked | `agent/guard.py` | T2, T4, T5 |
 | **Fork mode** (`T2P_FORK_OWNER`): branches go to a fork owned by the bot and PRs are cross-repository, so the target repository's CI treats them as fork PRs (no secrets, read-only token, approval can be required) | `pipeline.py` | T8 |
@@ -66,7 +66,10 @@ Residual risks:
 - `T2P_TEST_NETWORK=true` gives the tests the host's network namespace: unrestricted egress,
   the host's loopback services and, on cloud VMs, the instance metadata endpoint. Prefer
   test commands that need no network (dependencies preinstalled in the image), or block
-  `169.254.169.254` and loopback services for the service user at the host firewall.
+  `169.254.169.254` and loopback services for the service user at the host firewall. A
+  firewall does not cover abstract UNIX sockets, which also live in the network namespace
+  (an X11 or desktop session's): run the service under a dedicated account on a host with no
+  desktop session.
 - Without fork mode (T8), the target repository's workflows run the agent's code with its
   secrets as soon as the branch is pushed. Use fork mode, or keep secret-using jobs off
   `ticket2pr/*` branches (environments with required reviewers, `if:` guards).

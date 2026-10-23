@@ -385,6 +385,14 @@ def test_cli_doctor_reports_missing_config(monkeypatch: pytest.MonkeyPatch, tmp_
     assert "GitHub token" in result.output
 
 
+def test_cli_doctor_names_what_the_sandbox_lacks(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("T2P_SANDBOX", "true")
+    monkeypatch.setattr(cli, "missing_sandbox_tools", lambda: ["socat"])
+    result = runner.invoke(cli.app, ["doctor"])
+    assert result.exit_code == 1
+    assert "missing: socat" in result.output
+
+
 @pytest.mark.parametrize("credential", ["api_key", "claude_login", "claude_config_dir"])
 def test_cli_doctor_all_green(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, credential: str

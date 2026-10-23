@@ -7,7 +7,8 @@ dependencies are missing, so ticket2pr checks them before every job.
 
 The test sandbox uses bubblewrap: fresh PID namespace (so ``/proc`` shows no other process
 and no other environment), no network unless allowed, a read-only root filesystem, writable
-workspace and private ``/tmp`` only, an empty ``/run`` (no host IPC sockets), and the
+workspace and private ``/tmp`` only, an empty ``/run`` (no host IPC sockets; with network,
+only the resolver config is bound back, read-only), and the
 service's home and data directories replaced by empty tmpfs mounts so credentials files are
 out of reach.
 """
@@ -15,7 +16,6 @@ out of reach.
 from __future__ import annotations
 
 import ctypes
-import functools
 import logging
 import os
 import shutil
@@ -49,8 +49,17 @@ def missing_sandbox_tools(platform: str = sys.platform) -> list[str]:
     return missing
 
 
-@functools.cache  # once per process: run before every job, it must not block the loop each time
+_bwrap_ok = False  # cached once true: the probe runs before every job, on the event loop
+
+
 def _bwrap_works() -> bool:
+    global _bwrap_ok  # noqa: PLW0603 - a process-wide memo
+    if not _bwrap_ok:
+        _bwrap_ok = _probe_bwrap()  # a failure is retried at the next job, not remembered
+    return _bwrap_ok
+
+
+def _probe_bwrap() -> bool:
     """Installed is not enough: an unprivileged container, for one, forbids user namespaces.
 
     Probes with the tests' own profile (fresh /proc included, which some containers refuse).
