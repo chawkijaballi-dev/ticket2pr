@@ -193,8 +193,10 @@ exercise the real pipeline end to end, including attacks such as `.git/config` r
   virtualenv); repos without tests get draft PRs.
 - The sandbox needs Linux with bubblewrap; elsewhere, run the worker in an isolated
   container with `T2P_SANDBOX=false`.
-- A job cut short by a crash (not a graceful stop) is marked failed at the next start but
-  gets no ticket comment; re-add the label to retry it.
+- A job cut short by a crash (not a graceful stop) is marked failed at the next `serve` start
+  but gets no ticket comment; re-add the label to retry it. A `ticket2pr run` killed that way
+  (SIGKILL, out of memory) leaves its job `running`, which blocks the ticket until `serve`
+  starts once on that data directory.
 - The agent and the tests see the repository's files without git metadata (a security
   control): test commands that need it (`git ls-files`, `git describe`) fail; setuptools-scm
   and hatch-vcs builds get version `0.0.0`.

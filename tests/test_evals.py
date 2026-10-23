@@ -55,6 +55,10 @@ def test_discover_rejects_unknown_and_invalid_tasks(tmp_path: Path) -> None:
     (broken / "ticket.yaml").write_text("key: OK-1\n")
     with pytest.raises(ConfigurationError, match="missing repo/"):
         EvalTask.load(broken)
+    (broken / "repo").mkdir()
+    (broken / "hidden_tests").mkdir()
+    with pytest.raises(ConfigurationError, match="missing solution/"):
+        EvalTask.load(broken)
 
 
 def test_summary_metrics() -> None:

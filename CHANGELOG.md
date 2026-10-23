@@ -48,6 +48,8 @@ All notable changes to this project are documented here. The format follows
 - Sockets, FIFOs and device files left in the workspace are not copied to the publish clone.
 - An unexpected (non-SDK) agent error, or a timeout after the run's result arrived, no longer
   loses the attempt's spend or an earlier attempt's draft PR.
+- Local ticket files with a non-list `labels` are refused (a bare string was split into
+  letters); eval tasks without `solution/` are refused at discovery.
 - Job workspaces are deleted even when a run left read-only directories (such as Go's module
   cache) in them.
 - The PR's usage table shows cache-write tokens, so its counts add up to the job history's.

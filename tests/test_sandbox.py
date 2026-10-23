@@ -283,12 +283,34 @@ def test_remove_tree_clears_read_only_directories(tmp_path: Path) -> None:
     pkg.mkdir(parents=True)
     (pkg / "a.go").write_text("package a\n")
     (job / "gomod" / "link").symlink_to(outside)
+    for mode in (0o000, 0o300):  # unreadable: rmtree cannot even list them
+        locked = job / f"locked-{mode:o}"
+        (locked / "inner").mkdir(parents=True)
+        (locked / "inner" / "f").write_text("x")
+        (locked / "inner" / "f").chmod(0o000)
+        locked.chmod(mode)
     for directory in (pkg, pkg.parent):  # what Go does to its module cache
         directory.chmod(0o555)
     remove_tree(job)
     assert not job.exists()
     assert (outside / "keep").exists()
     remove_tree(job)  # already gone: no error
+
+
+def test_remove_tree_gives_up_quietly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    locked = tmp_path / "job" / "locked"
+    locked.mkdir(parents=True)
+    (locked / "f").write_text("x")
+    locked.chmod(0o555)
+
+    def refuse(self: Path, mode: int) -> None:
+        raise PermissionError(mode)
+
+    monkeypatch.setattr(Path, "chmod", refuse)
+    remove_tree(tmp_path / "job")  # best effort: no error
+    monkeypatch.undo()
+    assert (locked / "f").exists()
+    locked.chmod(0o755)
 
 
 def test_remove_git_dir_never_follows_a_symlink(tmp_path: Path) -> None:

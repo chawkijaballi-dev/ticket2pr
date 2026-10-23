@@ -48,7 +48,7 @@ class EvalTask:
         key = raw.get("key") if isinstance(raw, dict) else None
         if not isinstance(key, str) or not is_ticket_key(key):
             raise ConfigurationError(f"{path}/ticket.yaml needs a valid `key`")
-        for required in ("repo", "hidden_tests"):
+        for required in ("repo", "hidden_tests", "solution"):
             if not (path / required).is_dir():
                 raise ConfigurationError(f"{path} is missing {required}/")
         return cls(name=path.name, key=key, path=path)

@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import ValidationError
 
 from ticket2pr.domain import Ticket, is_ticket_key
 from ticket2pr.errors import TicketNotFoundError, TrackerError
@@ -36,16 +35,16 @@ class LocalTracker:
             raise TrackerError(f"{path}: invalid YAML: {exc}") from exc
         if not isinstance(raw, dict):
             raise TrackerError(f"{path}: expected a mapping at the top level")
-        try:
-            return Ticket(
-                key=key,
-                title=str(raw.get("title") or ""),  # `title:` alone is YAML null
-                description=str(raw.get("description") or ""),
-                labels=tuple(str(label) for label in raw.get("labels") or ()),
-                issue_type=str(raw.get("type") or "Task"),
-            )
-        except ValidationError as exc:
-            raise TrackerError(f"{path}: {exc}") from exc
+        labels = raw.get("labels") or []
+        if not isinstance(labels, list):  # `labels: ticket2pr` would split into letters
+            raise TrackerError(f"{path}: labels must be a list, e.g. [ticket2pr]")
+        return Ticket(
+            key=key,  # checked by _path
+            title=str(raw.get("title") or ""),  # `title:` alone is YAML null
+            description=str(raw.get("description") or ""),
+            labels=tuple(str(label) for label in labels),
+            issue_type=str(raw.get("type") or "Task"),
+        )
 
     async def comment(self, key: str, markdown: str) -> None:
         path = self._path(key, ".comments.md")

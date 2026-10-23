@@ -19,7 +19,8 @@ make eval      # offline eval suite (oracle agent)
   `make_pipeline`) and its `ScriptedAgent` rather than mocks of internals. Network calls are mocked with `respx`.
 - **Errors:** raise a `Ticket2PRError` subclass for anything a user can cause or fix; the
   pipeline turns those into job statuses.
-- **Security:** changes to `agent/guard.py`, `scm/git.py`, `verify.py` or the agent options
+- **Security:** changes to `agent/guard.py`, `sandbox.py`, `scm/git.py`, `verify.py`, `redaction.py`,
+  `render.py`'s escaping or the agent options
   need a test showing the attack they prevent, and an update to `docs/security.md`.
 - **Configuration:** new settings get a `description`; regenerate the docs with
   `uv run python scripts/gen_config_docs.py`.

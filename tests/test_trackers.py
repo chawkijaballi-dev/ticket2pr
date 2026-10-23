@@ -114,7 +114,12 @@ async def test_local_tracker_reads_yaml(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     ("content", "message"),
-    [("title: [unclosed", "invalid YAML"), ("- a list", "expected a mapping")],
+    [
+        ("title: [unclosed", "invalid YAML"),
+        ("- a list", "expected a mapping"),
+        ("labels: ticket2pr", "labels must be a list"),
+        ("labels: 5", "labels must be a list"),
+    ],
 )
 async def test_local_tracker_rejects_bad_files(tmp_path: Path, content: str, message: str) -> None:
     (tmp_path / "ABC-1.yaml").write_text(content)
