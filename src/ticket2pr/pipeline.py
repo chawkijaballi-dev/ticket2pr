@@ -216,6 +216,8 @@ class Pipeline:
         publish.exclude("__pycache__/", "*.py[co]")
         changes, excluded = await self._stage(publish)
 
+        # The title is published three times (commit, PR title, body): mask it once.
+        ticket = ticket.model_copy(update={"title": self._redactor.redact(ticket.title)})
         await publish.commit(
             render.commit_message(ticket),
             author_name=settings.commit_author_name,
@@ -385,7 +387,7 @@ class Pipeline:
             }
         )
         body = render.pr_body(
-            ticket=ticket.model_copy(update={"title": redact(ticket.title)}),
+            ticket=ticket,
             agent=agent,
             usage=usage,
             changes=changes,

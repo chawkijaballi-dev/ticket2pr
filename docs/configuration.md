@@ -14,7 +14,7 @@ name, `ANTHROPIC_API_KEY`, in the environment or in `.env`.
 | `T2P_JIRA_API_TOKEN` | *(secret)* | Jira API token. |
 | `T2P_JIRA_WEBHOOK_SECRET` | *(secret)* | Shared secret Jira signs webhooks with (required by serve). |
 | `T2P_TRIGGER_LABEL` | `ticket2pr` | Webhook jobs need this label (`run` checks it only with --require-label). |
-| `T2P_GITHUB_TOKEN` | *(secret)* | Fine-grained token: Contents + Pull requests (read/write). |
+| `T2P_GITHUB_TOKEN` | *(secret)* | Fine-grained token: Contents + Pull requests (read/write). Fork mode needs Contents write on the fork and Pull requests write on the target: a token that spans both owners (classic `public_repo`/`repo`, or a GitHub App installed on both). |
 | `T2P_GITHUB_API_URL` | `https://api.github.com` | Change for GitHub Enterprise Server. |
 | `T2P_REPOS` | `{}` | Jira project key → GitHub repo, e.g. {"PROJ": "acme/api"}. |
 | `T2P_FORK_OWNER` | *(empty)* | Push branches to <fork_owner>/<repo> (a fork owned by the bot) and open cross-repository PRs. Recommended: a branch pushed to the target repository runs its CI with the repository's secrets before anyone reviews the agent's code. |

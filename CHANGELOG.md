@@ -57,6 +57,7 @@ All notable changes to this project are documented here. The format follows
   the agent's escaped text), and agent text is masked before escaping too, which could split
   a secret containing `#`, `@` or `[`. The commit message and PR title neutralise `#123` and
   `@user` references like the body.
+- A configured secret in the ticket title is masked in the commit message and PR title too.
 - Without the sandbox, leftover processes (including a "zombie" whose other threads still run)
   are frozen then killed until none is left, never blocking past the deadline; a job
   refuses to publish if any survives. The eval harness ignores the developer's git config.

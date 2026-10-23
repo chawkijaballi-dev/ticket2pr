@@ -47,7 +47,9 @@ class Settings(BaseSettings):
     # ── GitHub ────────────────────────────────────────────────────────
     github_token: SecretStr = Field(
         default=SecretStr(""),
-        description="Fine-grained token: Contents + Pull requests (read/write).",
+        description="Fine-grained token: Contents + Pull requests (read/write). Fork mode needs "
+        "Contents write on the fork and Pull requests write on the target: a token that spans "
+        "both owners (classic `public_repo`/`repo`, or a GitHub App installed on both).",
     )
     github_api_url: str = Field(
         default="https://api.github.com", description="Change for GitHub Enterprise Server."
@@ -192,8 +194,9 @@ class Settings(BaseSettings):
         return self.repos.get(project)
 
 
-# Credentials the Claude CLI may need. They must reach it, and Claude Code strips them from
-# the agent's commands (CLAUDE_CODE_SUBPROCESS_ENV_SCRUB).
+# Credentials the Claude CLI may need. They must reach it; with the sandbox, Claude Code strips
+# them from the agent's commands (CLAUDE_CODE_SUBPROCESS_ENV_SCRUB), without it they are
+# reachable (docs/security.md).
 CLAUDE_CREDENTIAL_ENV_VARS = (
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",

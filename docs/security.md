@@ -78,7 +78,9 @@ Residual risks:
 ## Deployment guidance
 
 - **Least-privilege tokens.** GitHub: a fine-grained token limited to the mapped repositories
-  with *Contents* and *Pull requests* read/write, nothing else. Protect the base branch so
+  with *Contents* and *Pull requests* read/write, nothing else. Fork mode pushes to the fork
+  and opens the PR on the target with the same token, so it must span both owners: a classic
+  token (`public_repo` or `repo`) or a GitHub App installed on both. Protect the base branch so
   ticket2pr can only open PRs, never merge. Jira: a bot account that can read the projects
   and comment. Anthropic: a dedicated key in a workspace with a spend limit.
 - **A dedicated service account** with no other processes, no systemd `--user` session and no

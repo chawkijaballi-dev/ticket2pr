@@ -528,6 +528,19 @@ async def test_agent_summary_secrets_are_redacted_in_the_pr(
     assert "](" not in body.split("## Agent summary")[1]
 
 
+async def test_secrets_in_the_ticket_title_are_redacted(
+    make_pipeline: MakePipeline, store: JobStore, repos_dir: Path
+) -> None:
+    pipeline = make_pipeline(ScriptedAgent([fix_add]), github_token=SecretStr("subtracts"))
+    job = await pipeline.run(claim(store, "CALC-1"))
+    pr = _pr(job)
+    assert job.branch is not None
+    message = git(repos_dir / REPO, "log", "-1", "--format=%B", job.branch)
+    for text in (str(pr["title"]), str(pr["body"]), message):
+        assert "subtracts" not in text
+        assert "REDACTED" in text
+
+
 async def test_secrets_that_escaping_would_split_are_redacted(
     make_pipeline: MakePipeline, store: JobStore
 ) -> None:
