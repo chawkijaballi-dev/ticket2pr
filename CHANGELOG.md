@@ -27,7 +27,8 @@ All notable changes to this project are documented here. The format follows
 - `T2P_SANDBOX_READONLY_PATHS` expands `~`.
 - Empty mount-point files Claude Code's sandbox leaves (`package.json`, `.npmrc`,
   `.gitmodules`...) are removed before publishing.
-- The sandbox check also starts bwrap (once per process): installed but unable to create
+- The sandbox check also starts bwrap (a success is remembered for the process, a failure
+  retried at the next job, so fixing the host needs no restart): installed but unable to create
   namespaces (an unprivileged container) now fails the job before any spend instead of
   failing every test run, and `doctor` says what is missing.
 - With `T2P_TEST_NETWORK=true`, tests can resolve names on systemd-resolved hosts
