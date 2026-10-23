@@ -226,6 +226,28 @@ def test_remembered_deliveries_are_bounded(monkeypatch: pytest.MonkeyPatch) -> N
     assert deliveries.refusal(b"2", {}) == deliveries.refusal(b"3", {}) == "duplicate delivery"
 
 
+def test_a_delivery_that_errored_can_be_retried(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Jira retries a delivery that got a 5xx: it must not then count as a replay."""
+    queue: JobQueue = client.app.state.queue  # type: ignore[attr-defined]
+    submit = queue.submit
+    calls = 0
+
+    def flaky(key: str) -> Job | None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("database is locked")
+        return submit(key)
+
+    monkeypatch.setattr(queue, "submit", flaky)
+    event = _event()
+    with pytest.raises(RuntimeError):
+        _post(client, event)
+    assert _post(client, event).status_code == 202
+
+
 def test_jobs_api_auth(client: TestClient) -> None:
     assert client.get("/jobs").status_code == 401
     assert client.get("/jobs", headers={"Authorization": "Bearer wrong"}).status_code == 401

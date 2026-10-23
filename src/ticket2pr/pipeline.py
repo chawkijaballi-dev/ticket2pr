@@ -185,10 +185,6 @@ class Pipeline:
         push_repo, head = self._push_target(job.repo, job.branch)
         push_url = self._host.clone_url(push_repo)
         await self._own_branch_head(work, push_url, job.branch, auth)  # before any spend
-        # The agent gets a plain tree, not a repository: Claude Code itself runs git in its
-        # working directory (unsandboxed), so a .git the tests or the agent could write to
-        # would let them plant config (a filter, fsmonitor) that it then executes.
-        remove_git_dir(work.path)
 
         test_command = settings.test_command or detect_test_command(work.path)
         existed = {name for name in _SANDBOX_STUBS if (work.path / name).exists()}
@@ -295,7 +291,10 @@ class Pipeline:
                 feedback=feedback,
                 budget_usd=remaining,
             )
-            remove_git_dir(workspace)  # in case the previous attempt or its tests made one
+            # The agent gets a plain tree, not a repository: Claude Code itself runs git in its
+            # working directory (unsandboxed), so a .git the tests or a previous attempt could
+            # write to would let them plant config (a filter, fsmonitor) that it executes.
+            remove_git_dir(workspace)
             try:
                 result = await self._agent.run(task)
             except asyncio.CancelledError:  # no cost report: count the attempt's whole budget
@@ -338,7 +337,7 @@ class Pipeline:
         return completed.model_copy(update={"denied_actions": tuple(denied)}), tests
 
     async def _run_tests(self, command: str | None, workspace: Path) -> TestReport:
-        remove_git_dir(workspace)
+        remove_git_dir(workspace)  # also without the sandbox (run_tests only does it inside)
         return await run_tests(
             command,
             workspace,

@@ -88,7 +88,9 @@ def run(
     require_label: Annotated[
         bool, typer.Option(help="Skip tickets that lack the trigger label.")
     ] = False,
-    keep_workspace: Annotated[bool, typer.Option(help="Keep the clone for inspection.")] = False,
+    keep_workspace: Annotated[
+        bool, typer.Option(help="Keep the agent's tree (work/, no .git) and the publish clone.")
+    ] = False,
 ) -> None:
     """Process one ticket now, in the foreground."""
     if not is_ticket_key(ticket):

@@ -69,7 +69,7 @@ All notable changes to this project are documented here. The format follows
 - The agent's workspace is no longer a git repository, and sandboxed tests cannot create one:
   Claude Code runs git there itself, outside every sandbox, and would execute planted config.
 - Claude Code's git never treats the workspace root as a bare repository nor climbs into an
-  enclosing checkout; sandboxed eval grading works again on a clone with `.git`.
+  enclosing checkout.
 - @mentions, #references and closing keywords in agent text no longer notify or close anything.
 - Ticket titles are escaped like agent text, and `[]` links (including reference
   definitions) and fenced blocks in agent text are escaped too. The agent's summary is the

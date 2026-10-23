@@ -242,6 +242,7 @@ async def test_options_lock_down_the_agent(task: AgentTask) -> None:
     assert options.env["CLAUDE_CODE_TMPDIR"] == str(agent_tmp)
     assert options.env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
     assert options.env["GIT_CONFIG_VALUE_0"] == "explicit"
+    assert options.env["GIT_CEILING_DIRECTORIES"] == str(task.workspace.resolve().parent)
     assert isinstance(options.settings, str)
     assert json.loads(options.settings) == {
         "permissions": {"blockReadsOutsideWorkingDirectories": True}

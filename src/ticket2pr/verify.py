@@ -67,7 +67,10 @@ async def run_tests(
     timeout_s: float,
     sandbox: TestSandbox | None,
 ) -> TestReport:
-    """Run ``command`` in ``workspace``; inside ``sandbox`` unless it is explicitly ``None``."""
+    """Run ``command`` in ``workspace``; inside ``sandbox`` unless it is explicitly ``None``.
+
+    A sandboxed run deletes ``workspace/.git`` first: the tests must not hold a repository.
+    """
     if command is None:
         return TestReport(command=None, passed=False, output_tail="No test command detected.")
 
@@ -81,6 +84,8 @@ async def run_tests(
     env["PYTHONNOUSERSITE"] = "1"
     argv = ["/bin/sh", "-c", command]
     env["GIT_CEILING_DIRECTORIES"] = _git_ceiling(workspace)
+    # The tests see no git metadata: let setuptools-scm/hatch-vcs builds (uv run) still work.
+    env["SETUPTOOLS_SCM_PRETEND_VERSION"] = "0.0.0"
     if sandbox is not None:
         remove_git_dir(workspace)  # the sandbox mounts an unusable .git in its place
         env["TMPDIR"] = "/tmp"  # noqa: S108 - the sandbox's own tmpfs; the host's is hidden

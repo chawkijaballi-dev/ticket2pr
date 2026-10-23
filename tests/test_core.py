@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from conftest import git
 from ticket2pr import render
 from ticket2pr.config import Settings, secret_env_names
 from ticket2pr.domain import (
@@ -269,6 +270,13 @@ async def test_unsandboxed_runs_get_a_fresh_home(tmp_path: Path) -> None:
     assert report.output_tail == "1\n"
 
 
+async def test_versioned_builds_work_without_git_metadata(tmp_path: Path) -> None:
+    report = await run_tests(
+        'echo "$SETUPTOOLS_SCM_PRETEND_VERSION"', tmp_path, timeout_s=10, sandbox=None
+    )
+    assert report.output_tail == "0.0.0\n"
+
+
 async def test_run_tests_keep_version_manager_homes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -278,6 +286,14 @@ async def test_run_tests_keep_version_manager_homes(
         'echo "$RUSTUP_HOME|$CARGO_HOME"', tmp_path, timeout_s=10, sandbox=None
     )
     assert report.output_tail == f"{tmp_path}|\n"
+
+
+async def test_run_tests_never_climb_into_an_enclosing_repository(tmp_path: Path) -> None:
+    git(tmp_path, "init", "-q")  # e.g. a data dir inside the operator's checkout
+    workspace = tmp_path / "data" / "work"
+    workspace.mkdir(parents=True)
+    report = await run_tests("git rev-parse --show-toplevel", workspace, timeout_s=10, sandbox=None)
+    assert not report.passed, report.output_tail
 
 
 async def test_run_tests_timeout_kills_process_group(tmp_path: Path) -> None:

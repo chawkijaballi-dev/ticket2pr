@@ -195,6 +195,9 @@ exercise the real pipeline end to end, including attacks such as `.git/config` r
   container with `T2P_SANDBOX=false`.
 - A job cut short by a crash (not a graceful stop) is marked failed at the next start but
   gets no ticket comment; re-add the label to retry it.
+- The agent and the tests see the repository's files without git metadata (a security
+  control): test commands that need it (`git ls-files`, `git describe`) fail; setuptools-scm
+  and hatch-vcs builds get version `0.0.0`.
 - `serve` treats every `running` job in its database as cut short when it starts: do not
   run `ticket2pr run` on the data directory of a `serve` that may restart meanwhile.
 - The in-process queue suits a single replica. Several replicas need a shared queue (replace

@@ -38,6 +38,7 @@ def test_allows_ordinary_commands(policy: Policy, command: str) -> None:
     ("command", "reason"),
     [
         ("git push origin main", "reserved"),
+        ("git init -q .", "reserved"),
         ("git commit -am wip", "reserved"),
         ("git -C . push", "reserved"),
         ("git --git-dir=.git config user.name x", "reserved"),
