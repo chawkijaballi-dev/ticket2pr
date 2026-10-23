@@ -26,10 +26,7 @@ _TAIL_CHARS = 8_000
 _TAIL_BYTES = 4 * _TAIL_CHARS  # UTF-8: at most 4 bytes per character
 _DRAIN_TIMEOUT_S = 5.0
 # Not VIRTUAL_ENV: it would point tools such as `poetry run` at ticket2pr's own virtualenv.
-_ENV_PASSTHROUGH = (
-    *("PATH", "HOME", "LANG", "LC_ALL", "UV_CACHE_DIR"),
-    *NETWORK_ENV_VARS,  # with T2P_TEST_NETWORK, installs use the agent's proxy and CAs
-)
+_ENV_PASSTHROUGH = ("PATH", "HOME", "LANG", "LC_ALL", "UV_CACHE_DIR")
 _TOOLCHAIN_HOMES = {"RUSTUP_HOME": ".rustup", "CARGO_HOME": ".cargo", "PYENV_ROOT": ".pyenv"}
 
 
@@ -78,7 +75,10 @@ async def run_tests(
     if command is None:
         return TestReport(command=None, passed=False, output_tail="No test command detected.")
 
-    env = {key: os.environ[key] for key in _ENV_PASSTHROUGH if key in os.environ}
+    # Installs use the agent's proxy and CAs, but only tests with network access get them.
+    network = sandbox is None or sandbox.network
+    passed = (*_ENV_PASSTHROUGH, *(NETWORK_ENV_VARS if network else ()))
+    env = {key: os.environ[key] for key in passed if key in os.environ}
     env |= _toolchain_homes()
     env["PATH"] = _without_worker_venv(env.get("PATH", os.defpath))
     env["CI"] = "true"

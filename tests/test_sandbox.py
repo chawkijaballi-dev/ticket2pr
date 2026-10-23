@@ -245,6 +245,16 @@ async def test_sandbox_hides_home_and_blocks_network(
 
 
 @needs_bwrap
+async def test_offline_tests_get_no_proxy_settings(
+    workspace: Path, sandbox: TestSandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://bot:pw@proxy.test:3128")
+    assert not sandbox.network
+    output = await _run('echo "proxy=$HTTPS_PROXY"', workspace, sandbox)
+    assert output.strip() == "proxy="
+
+
+@needs_bwrap
 async def test_sandbox_allows_workspace_writes_only(
     workspace: Path, sandbox: TestSandbox, tmp_path: Path
 ) -> None:
@@ -589,6 +599,28 @@ def test_redactor_masks_claude_oauth_tokens(monkeypatch: pytest.MonkeyPatch) -> 
 def test_redactor_prefers_longest_match() -> None:
     redactor = Redactor(["abcdefgh", "abcdefgh-longer"])
     assert redactor.redact("x abcdefgh-longer y") == f"x {MASK} y"
+
+
+def test_redactor_masks_proxy_passwords(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://bot:s3cretpass@proxy.test:3128")
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.test:3128")  # no password: not a secret
+    redactor = Redactor.from_settings(settings)
+    assert redactor.redact("p=s3cretpass") == f"p={MASK}"
+    assert redactor.redact("http://proxy.test:3128") == "http://proxy.test:3128"
+    monkeypatch.setenv("HTTPS_PROXY", "http://ghp_tokenonly1@proxy.test:3128")
+    assert Redactor.from_settings(settings).redact("u=ghp_tokenonly1") == f"u={MASK}"
+
+
+def test_redactor_masks_provider_credentials(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMIK7MDENG")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", "authorization=Bearer otlp-token-123,x=1")
+    redactor = Redactor.from_settings(settings)
+    assert redactor.contains_secret("key = 'wJalrXUtnFEMIK7MDENG'")
+    assert redactor.redact("got Bearer otlp-token-123") == f"got {MASK}"
 
 
 def test_redactor_masks_a_secret_cut_by_a_tail() -> None:

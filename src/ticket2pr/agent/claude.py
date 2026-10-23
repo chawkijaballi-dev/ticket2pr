@@ -27,7 +27,12 @@ from claude_agent_sdk import (
 from ticket2pr.agent.base import AgentTask
 from ticket2pr.agent.guard import Policy
 from ticket2pr.agent.prompts import SYSTEM_PROMPT, build_prompt
-from ticket2pr.config import NETWORK_ENV_VARS, Effort, secret_env_names
+from ticket2pr.config import (
+    NETWORK_ENV_VARS,
+    Effort,
+    enabled_cloud_providers,
+    secret_env_names,
+)
 from ticket2pr.domain import AgentOutcome, AgentResult, Usage
 from ticket2pr.sandbox import ensure_sandbox_available
 
@@ -52,11 +57,9 @@ _PROVIDER_ENV = {
 
 
 def _blanked_env() -> dict[str, str]:
+    providers = enabled_cloud_providers()
     kept = _ENV_KEPT_PREFIXES + tuple(
-        prefix
-        for flag, prefixes in _PROVIDER_ENV.items()
-        if os.environ.get(flag, "") not in ("", "0", "false")
-        for prefix in prefixes
+        prefix for flag in providers for prefix in _PROVIDER_ENV[flag]
     )
     return {name: "" for name in os.environ if name not in _ENV_KEPT and not name.startswith(kept)}
 

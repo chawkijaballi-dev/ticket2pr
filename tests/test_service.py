@@ -444,6 +444,17 @@ def test_cli_doctor_reports_missing_config(monkeypatch: pytest.MonkeyPatch, tmp_
     assert "GitHub token" in result.output
 
 
+def test_doctor_accepts_a_cloud_provider(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, settings: Settings
+) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    assert not cli._has_claude_credentials(settings)
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+    assert cli._has_claude_credentials(settings)
+
+
 def test_cli_doctor_names_what_the_sandbox_lacks(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("T2P_SANDBOX", "true")
     monkeypatch.setattr(cli, "missing_sandbox_tools", lambda: ["socat"])

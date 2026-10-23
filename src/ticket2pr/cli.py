@@ -17,7 +17,12 @@ from rich.logging import RichHandler
 from rich.table import Table
 
 from ticket2pr import __version__
-from ticket2pr.config import CLAUDE_CREDENTIAL_ENV_VARS, REPO_RE, Settings
+from ticket2pr.config import (
+    CLAUDE_CREDENTIAL_ENV_VARS,
+    REPO_RE,
+    Settings,
+    enabled_cloud_providers,
+)
 from ticket2pr.domain import Job, JobStatus, is_ticket_key
 from ticket2pr.errors import Ticket2PRError
 from ticket2pr.pipeline import RunOptions
@@ -257,8 +262,9 @@ def eval_(
 
 
 def _has_claude_credentials(settings: Settings) -> bool:
-    """Any credential the Claude Agent SDK can use: a key, a token, or a `claude` login."""
-    if settings.anthropic_api_key.get_secret_value():
+    """Any credential the Claude Agent SDK can use: a key, a token, a `claude` login, or a
+    cloud provider (Bedrock, Vertex) whose own credentials Claude Code checks itself."""
+    if settings.anthropic_api_key.get_secret_value() or enabled_cloud_providers():
         return True
     if any(os.environ.get(name) for name in CLAUDE_CREDENTIAL_ENV_VARS):
         return True

@@ -67,8 +67,11 @@ All notable changes to this project are documented here. The format follows
   `@user` references like the body.
 - The agent's environment is an allowlist: worker variables ticket2pr does not know about
   (`DATABASE_URL`...) are blanked; Claude Code's own settings are kept, and AWS or Google
-  Cloud variables only with Bedrock or Vertex. Test runs get the proxy and CA settings too. A secret cut at the start of the test output tail
+  Cloud variables only with Bedrock or Vertex. Test runs with network access get the proxy and CA settings too; a proxy URL's password is masked in published text. A secret cut at the start of the test output tail
   is masked too.
+- Cloud-provider and OTLP-header credentials kept for Claude Code (`AWS_SECRET_ACCESS_KEY`,
+  `OTEL_EXPORTER_OTLP_HEADERS`...) and a proxy URL's user or password are masked and refused
+  in commits like other secrets. `doctor` accepts a Bedrock or Vertex setup.
 - `GH-7` references in agent text and the ticket title are neutralised.
 - Closing keywords followed by an issue URL (`Fixes https://github.com/o/r/issues/7`) are
   neutralised too.

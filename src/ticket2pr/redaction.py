@@ -9,10 +9,18 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable
+from contextlib import suppress
+from urllib.parse import urlsplit
 
 from pydantic import SecretStr
 
-from ticket2pr.config import CLAUDE_CREDENTIAL_ENV_VARS, OTHER_CREDENTIAL_ENV_VARS, Settings
+from ticket2pr.config import (
+    CLAUDE_CREDENTIAL_ENV_VARS,
+    OTHER_CREDENTIAL_ENV_VARS,
+    PROVIDER_CREDENTIAL_ENV_VARS,
+    PROXY_ENV_VARS,
+    Settings,
+)
 
 MASK = "REDACTED"  # no brackets: it lands after _inert and must not form a [link](url)
 _MIN_SECRET_LEN = 8  # shorter values would mask ordinary words
@@ -33,6 +41,15 @@ class Redactor:
         ]
         extra = (*CLAUDE_CREDENTIAL_ENV_VARS, *OTHER_CREDENTIAL_ENV_VARS)
         values += [os.environ.get(name, "") for name in extra]
+        for name in PROVIDER_CREDENTIAL_ENV_VARS:
+            value = os.environ.get(name, "")
+            values += [value, *(pair.partition("=")[2].strip() for pair in value.split(","))]
+        for name in PROXY_ENV_VARS:
+            proxy = os.environ.get(name, "")
+            with suppress(ValueError):
+                url = urlsplit(proxy)
+                if url.password or url.username:  # a token can be the user name alone
+                    values += [proxy, url.password or "", url.username or ""]
         return cls(values)
 
     def redact(self, text: str) -> str:

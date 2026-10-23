@@ -203,10 +203,29 @@ CLAUDE_CREDENTIAL_ENV_VARS = (
     "ANTHROPIC_AUTH_TOKEN",
     "CLAUDE_CODE_OAUTH_TOKEN",
 )
-# Egress proxy and CA settings: passed to the agent and to the tests.
+# Claude Code on a cloud provider: it authenticates with that provider's credentials.
+CLOUD_PROVIDER_FLAGS = ("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX")
+
+
+def enabled_cloud_providers() -> tuple[str, ...]:
+    return tuple(
+        flag for flag in CLOUD_PROVIDER_FLAGS if os.environ.get(flag, "") not in ("", "0", "false")
+    )
+
+
+# Egress proxy and CA settings, for the agent and for tests that have network access. A proxy
+# URL can hold a password: the redactor masks it.
+PROXY_ENV_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy")
 NETWORK_ENV_VARS = (
-    *("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"),
+    *PROXY_ENV_VARS,
     *("SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE"),
+)
+# Credentials Claude Code may need for a cloud provider or telemetry export: kept for it (agent
+# allowlist), so the redactor must know them. OTLP headers are "k=v,k2=v2".
+PROVIDER_CREDENTIAL_ENV_VARS = (
+    *("AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_BEARER_TOKEN_BEDROCK"),
+    *("OTEL_EXPORTER_OTLP_HEADERS", "OTEL_EXPORTER_OTLP_TRACES_HEADERS"),
+    *("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "OTEL_EXPORTER_OTLP_LOGS_HEADERS"),
 )
 # Credentials of other tools that may sit in the worker's environment: blanked for the agent.
 OTHER_CREDENTIAL_ENV_VARS = ("GITHUB_TOKEN", "GH_TOKEN")
