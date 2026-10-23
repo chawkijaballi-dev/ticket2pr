@@ -364,6 +364,12 @@ def test_cli_run_records_sigterm_as_interrupted(
         assert store.list()[0].status is JobStatus.FAILED  # not left "running"
 
 
+def test_cli_run_rejects_a_repo_without_owner() -> None:
+    result = runner.invoke(cli.app, ["run", "CALC-1", "--repo", "shop"])
+    assert result.exit_code == 2
+    assert "owner/name" in result.output
+
+
 def test_cli_run_rejects_bad_key() -> None:
     result = runner.invoke(cli.app, ["run", "not-a-key"])
     assert result.exit_code == 2

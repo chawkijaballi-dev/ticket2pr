@@ -7,8 +7,8 @@ Commits and pushes happen in a *publish clone* made after the agent stopped
 (``GitRepo.clone`` + ``sync_tree``), and every git command ticket2pr runs:
 
 * ignores system and global configuration (``GIT_CONFIG_NOSYSTEM``, ``GIT_CONFIG_GLOBAL``),
-* disables hooks, fsmonitor and external attribute files, and only allows https/file
-  transports,
+* disables hooks, fsmonitor, external attribute files and the per-user excludes file, and
+  only allows https/file transports,
 * receives credentials through ``GIT_CONFIG_*`` environment variables, never argv
   (visible to every process) or a config file.
 """

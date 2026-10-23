@@ -17,7 +17,7 @@ from rich.logging import RichHandler
 from rich.table import Table
 
 from ticket2pr import __version__
-from ticket2pr.config import CLAUDE_CREDENTIAL_ENV_VARS, Settings
+from ticket2pr.config import CLAUDE_CREDENTIAL_ENV_VARS, REPO_RE, Settings
 from ticket2pr.domain import Job, JobStatus, is_ticket_key
 from ticket2pr.errors import Ticket2PRError
 from ticket2pr.pipeline import RunOptions
@@ -93,6 +93,8 @@ def run(
     """Process one ticket now, in the foreground."""
     if not is_ticket_key(ticket):
         raise typer.BadParameter(f"{ticket!r} is not a ticket key like PROJ-42")
+    if repo is not None and not REPO_RE.fullmatch(repo):
+        raise typer.BadParameter(f"--repo {repo!r} is not owner/name")
     settings = _settings()
     options = RunOptions(require_label=require_label, keep_workspace=keep_workspace)
 

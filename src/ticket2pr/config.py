@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_MODEL = "claude-opus-5-5"
 
-_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _OWNER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 _PROJECT_RE = re.compile(r"^[A-Z][A-Z0-9_]+$")
 
@@ -98,7 +98,7 @@ class Settings(BaseSettings):
     sandbox_readonly_paths: list[Path] = Field(
         default_factory=list,
         description="Extra toolchain directories under $HOME or the working directory that "
-        "the test sandbox must still see (read-only).",
+        "the agent's Bash and the test sandbox must still see (read-only).",
     )
     network_allowlist: list[str] = Field(
         default_factory=lambda: ["pypi.org", "files.pythonhosted.org"],
@@ -141,7 +141,7 @@ class Settings(BaseSettings):
         for project, repo in value.items():
             if not _PROJECT_RE.fullmatch(project):
                 raise ValueError(f"invalid Jira project key: {project!r}")
-            if not _REPO_RE.fullmatch(repo):
+            if not REPO_RE.fullmatch(repo):
                 raise ValueError(f"invalid GitHub repo for {project}: {repo!r} (want owner/name)")
         return value
 
