@@ -32,6 +32,17 @@ from ticket2pr.domain import AgentOutcome, AgentResult, Usage
 from ticket2pr.sandbox import ensure_sandbox_available
 
 logger = logging.getLogger(__name__)
+# The worker's environment reaches the agent's commands: everything else is blanked, so a
+# credential ticket2pr does not know about (DATABASE_URL, AWS_*...) cannot end up in the diff.
+_ENV_KEPT = frozenset(
+    {
+        *("PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TERM", "TZ", "TMPDIR"),
+        *("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"),
+        *("SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE"),
+        *("UV_CACHE_DIR", "RUSTUP_HOME", "CARGO_HOME", "PYENV_ROOT"),
+    }
+)
+_ENV_KEPT_PREFIXES = ("LC_", "CLAUDE_", "ANTHROPIC_")  # Claude Code's own settings
 # Claude Code's shared temp dirs: /tmp/claude-<uid> since CLI 2.1.309, /tmp/claude before.
 _SHARED_TMP = ["/tmp/claude", f"/tmp/claude-{os.getuid()}"]  # noqa: S108
 # Host IPC sockets (the systemd/D-Bus user bus): `systemd-run --user` would start a process
@@ -200,13 +211,18 @@ class ClaudeAgent:
             sandbox=sandbox,
             settings=settings,
             hooks={"PreToolUse": [HookMatcher(hooks=[_guard_hook(policy)])]},
-            # Blank ticket2pr's own secrets, and have Claude Code strip its credentials
-            # (ANTHROPIC_API_KEY, ...) from the environment of every command the agent runs.
+            # Blank unknown variables and ticket2pr's own secrets, and have Claude Code strip
+            # its credentials (ANTHROPIC_API_KEY, ...) from every command the agent runs.
             # The scrub also makes Claude Code require its sandbox (Bash is refused without
             # it), so it only comes with the sandbox: unsandboxed, the container is the
             # boundary and Claude Code's credentials are reachable anyway (docs/security.md).
             # PYTHONDONTWRITEBYTECODE keeps the agent's own test runs from leaving caches behind.
             env={
+                **{
+                    name: ""
+                    for name in os.environ
+                    if name not in _ENV_KEPT and not name.startswith(_ENV_KEPT_PREFIXES)
+                },
                 **dict.fromkeys(secret_env_names(), ""),
                 **({"ANTHROPIC_API_KEY": self._api_key} if self._api_key else {}),
                 **({"CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"} if self._sandbox else {}),

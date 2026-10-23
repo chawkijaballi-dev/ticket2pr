@@ -65,6 +65,9 @@ All notable changes to this project are documented here. The format follows
   the agent's escaped text), and agent text is masked before escaping too, which could split
   a secret containing `#`, `@` or `[`. The commit message and PR title neutralise `#123` and
   `@user` references like the body.
+- The agent's environment is an allowlist: worker variables ticket2pr does not know about
+  (`DATABASE_URL`, `AWS_*`...) are blanked. A secret cut at the start of the test output tail
+  is masked too.
 - Closing keywords followed by an issue URL (`Fixes https://github.com/o/r/issues/7`) are
   neutralised too.
 - A configured secret in the ticket title is masked in the commit message and PR title too.

@@ -589,3 +589,9 @@ def test_redactor_masks_claude_oauth_tokens(monkeypatch: pytest.MonkeyPatch) -> 
 def test_redactor_prefers_longest_match() -> None:
     redactor = Redactor(["abcdefgh", "abcdefgh-longer"])
     assert redactor.redact("x abcdefgh-longer y") == f"x {MASK} y"
+
+
+def test_redactor_masks_a_secret_cut_by_a_tail() -> None:
+    redactor = Redactor(["ghp_0123456789abcdef"])
+    assert redactor.redact("23456789abcdef rest") == f"{MASK} rest"
+    assert redactor.redact("9abcdef rest") == "9abcdef rest"  # under 8 characters: words

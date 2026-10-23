@@ -233,6 +233,19 @@ async def test_timeout(task: AgentTask) -> None:
     assert result.usage.cost_label == "≤ $1.50"
 
 
+async def test_unknown_environment_variables_are_blanked(
+    task: AgentTask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgres://u:p@db/x")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", "/srv/claude")
+    query = Recorder(_result())
+    await _agent(query).run(task)
+    env = query.calls[0][1].env
+    assert env["DATABASE_URL"] == ""
+    assert "PATH" not in env
+    assert "CLAUDE_CONFIG_DIR" not in env
+
+
 async def test_options_lock_down_the_agent(task: AgentTask) -> None:
     query = Recorder(_result())
     await _agent(query).run(task)

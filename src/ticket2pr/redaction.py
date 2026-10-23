@@ -38,6 +38,11 @@ class Redactor:
     def redact(self, text: str) -> str:
         for secret in self._secrets:
             text = text.replace(secret, MASK)
+            # A tail cut (test output) can start inside a secret: mask that end of it too.
+            for start in range(1, len(secret) - _MIN_SECRET_LEN + 1):
+                if text.startswith(secret[start:]):
+                    text = MASK + text[len(secret) - start :]
+                    break
         return text
 
     def contains_secret(self, data: str | bytes) -> bool:
