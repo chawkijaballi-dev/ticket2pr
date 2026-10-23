@@ -69,9 +69,11 @@ All notable changes to this project are documented here. The format follows
   (`DATABASE_URL`...) are blanked; Claude Code's own settings are kept, and AWS or Google
   Cloud variables only with Bedrock or Vertex. Test runs with network access get the proxy and CA settings too; a proxy URL's password is masked in published text. A secret cut at the start of the test output tail
   is masked too.
-- Cloud-provider and OTLP-header credentials kept for Claude Code (`AWS_SECRET_ACCESS_KEY`,
-  `OTEL_EXPORTER_OTLP_HEADERS`...) and a proxy URL's user or password are masked and refused
-  in commits like other secrets. `doctor` accepts a Bedrock or Vertex setup.
+- The values of every environment variable named like a credential (`*KEY*`, `*TOKEN*`,
+  `*SECRET*`, `*PASSWORD*`, `*PASSPHRASE*`, `*HEADERS*`, header values decoded) and a proxy
+  URL's user or password (with or without a scheme) are masked and refused in commits like
+  other secrets. Bedrock/Vertex flags count only as 1/true/yes/on. The agent's builds get
+  `SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0` like the test runs. `doctor` accepts a Bedrock or Vertex setup.
 - `GH-7` references in agent text and the ticket title are neutralised.
 - Closing keywords followed by an issue URL (`Fixes https://github.com/o/r/issues/7`) are
   neutralised too.

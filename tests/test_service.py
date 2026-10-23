@@ -451,6 +451,8 @@ def test_doctor_accepts_a_cloud_provider(
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     assert not cli._has_claude_credentials(settings)
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "False")
+    assert not cli._has_claude_credentials(settings)
     monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
     assert cli._has_claude_credentials(settings)
 

@@ -611,6 +611,8 @@ def test_redactor_masks_proxy_passwords(
     assert redactor.redact("http://proxy.test:3128") == "http://proxy.test:3128"
     monkeypatch.setenv("HTTPS_PROXY", "http://ghp_tokenonly1@proxy.test:3128")
     assert Redactor.from_settings(settings).redact("u=ghp_tokenonly1") == f"u={MASK}"
+    monkeypatch.setenv("HTTPS_PROXY", "user:pa55word99@proxy.test:3128")
+    assert Redactor.from_settings(settings).redact("pa55word99") == MASK
 
 
 def test_redactor_masks_provider_credentials(
@@ -621,6 +623,10 @@ def test_redactor_masks_provider_credentials(
     redactor = Redactor.from_settings(settings)
     assert redactor.contains_secret("key = 'wJalrXUtnFEMIK7MDENG'")
     assert redactor.redact("got Bearer otlp-token-123") == f"got {MASK}"
+    monkeypatch.setenv("ANTHROPIC_CUSTOM_HEADERS", "X-Org: acme\nAuthorization: Bearer gw-tok-456")
+    assert Redactor.from_settings(settings).redact("Bearer gw-tok-456") == MASK
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", "Authorization=Bearer%20otlp-enc-789")
+    assert Redactor.from_settings(settings).redact("token otlp-enc-789") == f"token {MASK}"
 
 
 def test_redactor_masks_a_secret_cut_by_a_tail() -> None:

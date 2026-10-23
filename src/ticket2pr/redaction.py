@@ -8,22 +8,22 @@ in it is either refused (commits) or masked (text).
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Iterable
 from contextlib import suppress
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from pydantic import SecretStr
 
-from ticket2pr.config import (
-    CLAUDE_CREDENTIAL_ENV_VARS,
-    OTHER_CREDENTIAL_ENV_VARS,
-    PROVIDER_CREDENTIAL_ENV_VARS,
-    PROXY_ENV_VARS,
-    Settings,
-)
+from ticket2pr.config import PROXY_ENV_VARS, Settings
 
 MASK = "REDACTED"  # no brackets: it lands after _inert and must not form a [link](url)
 _MIN_SECRET_LEN = 8  # shorter values would mask ordinary words
+# Environment variables that hold credentials (ANTHROPIC_API_KEY, GH_TOKEN, AWS_SECRET_ACCESS_KEY,
+# ANTHROPIC_CUSTOM_HEADERS, OTEL_EXPORTER_OTLP_HEADERS...): the agent may see some of them.
+_CREDENTIAL_NAME = re.compile(r"KEY|TOKEN|SECRET|PASSWORD|PASSPHRASE|HEADERS", re.IGNORECASE)
+# Header lists: "k=v,k2=v2" (OTLP) or "Name: value" lines (ANTHROPIC_CUSTOM_HEADERS).
+_HEADER_VALUE = re.compile(r"[^\n,=:]+[=:]\s*([^\n,]+)")
 
 
 class Redactor:
@@ -39,17 +39,18 @@ class Redactor:
             for name in type(settings).model_fields
             if isinstance(value := getattr(settings, name), SecretStr)
         ]
-        extra = (*CLAUDE_CREDENTIAL_ENV_VARS, *OTHER_CREDENTIAL_ENV_VARS)
-        values += [os.environ.get(name, "") for name in extra]
-        for name in PROVIDER_CREDENTIAL_ENV_VARS:
-            value = os.environ.get(name, "")
-            values += [value, *(pair.partition("=")[2].strip() for pair in value.split(","))]
+        for name, value in os.environ.items():
+            if _CREDENTIAL_NAME.search(name):
+                for part in (value, *_HEADER_VALUE.findall(value)):
+                    decoded = unquote(part.strip())  # OTLP headers are percent-encoded
+                    values += [part, decoded, decoded.rpartition(" ")[2]]  # "Bearer <token>"
         for name in PROXY_ENV_VARS:
             proxy = os.environ.get(name, "")
             with suppress(ValueError):
-                url = urlsplit(proxy)
+                # curl and pip read "user:pass@host:port" without a scheme as http.
+                url = urlsplit(proxy if "://" in proxy else f"http://{proxy}")
                 if url.password or url.username:  # a token can be the user name alone
-                    values += [proxy, url.password or "", url.username or ""]
+                    values += [proxy, unquote(url.password or ""), unquote(url.username or "")]
         return cls(values)
 
     def redact(self, text: str) -> str:

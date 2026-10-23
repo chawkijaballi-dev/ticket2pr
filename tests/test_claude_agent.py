@@ -277,6 +277,7 @@ async def test_options_lock_down_the_agent(task: AgentTask) -> None:
     assert all(options.env[name] == "" for name in secret_env_names())
     assert options.env["CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"] == "1"
     assert options.env["PYTHONDONTWRITEBYTECODE"] == "1"
+    assert options.env["SETUPTOOLS_SCM_PRETEND_VERSION"] == "0.0.0"
     sandbox: dict[str, Any] = dict(options.sandbox)
     assert sandbox["failIfUnavailable"] is True
     agent_tmp = task.workspace.resolve().parent / "agent-tmp"  # per job, not /tmp/claude

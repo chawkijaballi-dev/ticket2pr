@@ -38,7 +38,7 @@ developer time for little value. ticket2pr handles them automatically, without t
 
 - code runs isolated: sandboxed (or in a dedicated container), with ticket2pr's tokens
   hidden from the agent (see the [security model](docs/security.md));
-- spend is capped: dollars and agent turns per ticket;
+- spend is capped: dollars per ticket, agent turns and wall-clock time per attempt;
 - **a human always reviews**: ticket2pr opens the PR, it never merges it.
 
 ### Input → output

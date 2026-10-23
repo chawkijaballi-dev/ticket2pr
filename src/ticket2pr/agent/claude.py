@@ -256,6 +256,8 @@ class ClaudeAgent:
                 "GIT_CONFIG_VALUE_0": "explicit",
                 "GIT_CEILING_DIRECTORIES": str(workspace.parent),
                 "PYTHONDONTWRITEBYTECODE": "1",
+                # No .git: setuptools-scm/hatch-vcs builds need a version, as in the test runs.
+                "SETUPTOOLS_SCM_PRETEND_VERSION": "0.0.0",
                 "PYTHONNOUSERSITE": "1",  # no usercustomize.py planted in $HOME by a past job
             },
         )

@@ -630,7 +630,8 @@ async def test_end_to_end_with_the_real_test_sandbox(
             "            data = open(path, 'rb').read()\n"
             "        except OSError:\n"
             "            continue\n"
-            "        assert b'ghp_from_the_environment' not in data\n"
+            # Split: the token itself in a committed file would be refused (redaction).
+            "        assert b'ghp_from_' b'the_environment' not in data\n"
         )
 
     job = await make_pipeline(ScriptedAgent([fix_and_spy]), sandbox=True).run(
