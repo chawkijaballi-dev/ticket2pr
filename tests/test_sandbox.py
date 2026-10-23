@@ -51,7 +51,17 @@ def test_missing_sandbox_tools(
     monkeypatch: pytest.MonkeyPatch, platform: str, which: dict[str, str], missing: list[str]
 ) -> None:
     monkeypatch.setattr("shutil.which", which.get)
+    monkeypatch.setattr("ticket2pr.sandbox._bwrap_works", lambda: True)
     assert missing_sandbox_tools(platform) == missing
+
+
+def test_installed_bwrap_that_cannot_start_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """In an unprivileged container bwrap is installed but cannot create namespaces."""
+    monkeypatch.setattr("shutil.which", lambda tool: f"/usr/bin/{tool}")
+    monkeypatch.setattr("ticket2pr.sandbox._bwrap_works", lambda: False)
+    assert missing_sandbox_tools("linux") == [
+        "permission to create namespaces (bwrap cannot start here)"
+    ]
 
 
 def test_ensure_sandbox_available(monkeypatch: pytest.MonkeyPatch) -> None:

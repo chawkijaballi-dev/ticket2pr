@@ -19,6 +19,7 @@ import logging
 import os
 import shutil
 import signal
+import subprocess
 import sys
 from contextlib import suppress
 from dataclasses import dataclass
@@ -40,7 +41,24 @@ def missing_sandbox_tools(platform: str = sys.platform) -> list[str]:
     """Return what is missing to sandbox the agent *and* the tests (empty when all is there)."""
     if platform != "linux":
         return [f"no supported sandbox on {platform} (Linux with bubblewrap is required)"]
-    return [tool for tool in _LINUX_SANDBOX_TOOLS if shutil.which(tool) is None]
+    missing = [tool for tool in _LINUX_SANDBOX_TOOLS if shutil.which(tool) is None]
+    if not missing and not _bwrap_works():
+        missing.append("permission to create namespaces (bwrap cannot start here)")
+    return missing
+
+
+def _bwrap_works() -> bool:
+    """Installed is not enough: an unprivileged container, for one, forbids user namespaces."""
+    try:
+        probe = subprocess.run(
+            ["bwrap", "--unshare-all", "--die-with-parent", "--ro-bind", "/", "/", "true"],  # noqa: S607 - same PATH lookup as the test sandbox
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return probe.returncode == 0
 
 
 def ensure_sandbox_available() -> None:

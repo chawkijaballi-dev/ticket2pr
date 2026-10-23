@@ -805,15 +805,28 @@ def test_ticket_only_sees_errors_ticket2pr_worded(exc: Exception, public: str) -
 
 
 async def test_sandbox_mount_stubs_are_not_committed(
-    make_pipeline: MakePipeline, store: JobStore, repos_dir: Path
+    make_pipeline: MakePipeline,
+    store: JobStore,
+    repos_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    (repos_dir / REPO / "yarn.lock").touch()  # a tracked empty stub name: the repo's own
+    git(repos_dir / REPO, "add", "yarn.lock")
+    git(repos_dir / REPO, "commit", "-q", "-m", "empty lock")
+
     def fix_and_leave_stubs(task: AgentTask) -> None:
         fix_add(task)
-        for name in ("package.json", ".npmrc", ".gitmodules"):
+        for name in (".npmrc", ".gitmodules"):
             (task.workspace / name).touch()  # what Claude Code's sandbox leaves behind
-        (task.workspace / ".claude" / "agents").mkdir(parents=True)
+        (task.workspace / "real.json").write_text("{}")
+        (task.workspace / "package.json").symlink_to("real.json")  # not a stub: kept
+        (task.workspace / "yarn.lock").write_text("")  # existed before: kept as is
         (task.workspace / "empty_module.py").touch()  # the agent's own empty file stays
 
-    job = await make_pipeline(ScriptedAgent([fix_and_leave_stubs])).run(claim(store, "CALC-1"))
+    # The stubs come with Claude Code's sandbox; the tests here run unsandboxed.
+    monkeypatch.setattr("ticket2pr.pipeline.ensure_sandbox_available", lambda: None)
+    monkeypatch.setattr("ticket2pr.pipeline.sandbox_profile", lambda _settings: None)
+    pipeline = make_pipeline(ScriptedAgent([fix_and_leave_stubs]), sandbox=True)
+    job = await pipeline.run(claim(store, "CALC-1"))
     files = git(repos_dir / REPO, "show", "--name-only", "--format=", _branch(job)).split()
-    assert sorted(files) == ["calc.py", "empty_module.py"]
+    assert sorted(files) == ["calc.py", "empty_module.py", "package.json", "real.json"]

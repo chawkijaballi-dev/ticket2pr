@@ -71,6 +71,17 @@ async def test_staged_diff_includes_binary_content(repos_dir: Path, tmp_path: Pa
         await repo.staged_diff(max_bytes=10)
 
 
+async def test_remote_head_tolerates_an_empty_email(repos_dir: Path, tmp_path: Path) -> None:
+    origin = repos_dir / REPO
+    git(origin, "checkout", "-q", "-b", "ticket2pr/x-1")
+    git(origin, "-c", "user.email=", "commit", "-q", "--allow-empty", "-m", "no email")
+    git(origin, "checkout", "-q", "main")
+    repo = await GitRepo.clone(origin.as_uri(), tmp_path / "ws", branch="main")
+    head = await repo.remote_head(origin.as_uri(), "ticket2pr/x-1")
+    assert head is not None
+    assert head[1:] == ("", "")
+
+
 async def test_undecodable_names_round_trip(repos_dir: Path, tmp_path: Path) -> None:
     repo = await GitRepo.clone((repos_dir / REPO).as_uri(), tmp_path / "ws", branch="main")
     name = os.fsdecode(b"x\xff.pem")

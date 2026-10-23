@@ -107,7 +107,7 @@ def test_symlink_escape_is_blocked(policy: Policy, tmp_path: Path) -> None:
 
 
 def test_tools_without_paths_pass(policy: Policy) -> None:
-    assert policy.check("Bash", {"command": "ls"}) is None
+    assert policy.check("Grep", {"pattern": "TODO"}) is None
 
 
 @pytest.mark.parametrize(

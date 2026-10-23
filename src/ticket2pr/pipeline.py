@@ -57,14 +57,14 @@ logger = logging.getLogger(__name__)
 
 _MIN_RETRY_BUDGET_USD = 0.25
 KEEP_MARKER = ".keep"
-# Empty mount points Claude Code's Bash sandbox leaves for protected paths that did not exist
-# (seen with CLI 2.1.308); committed as is, they would add junk such as an empty package.json.
+# Empty mount-point files Claude Code's Bash sandbox leaves at the workspace root for protected
+# paths that did not exist (CLI 2.1.308); committed, they would add e.g. an empty package.json.
+# (It leaves empty directories too, but git never records those.)
 _SANDBOX_STUBS = (
     *(f".env{suffix}" for suffix in ("", ".local", ".development", ".production", ".test")),
     *(f".env.{env}.local" for env in ("development", "production", "test")),
     ".gitmodules", ".npmrc", ".yarnrc", ".yarnrc.yml", "bunfig.toml",
     "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
-    ".claude/agents", ".claude/commands", ".claude", "node_modules/.bin", "node_modules",
 )  # fmt: skip
 _MAX_DIFF_BYTES = 20 * 1024 * 1024  # the secret scan holds the whole diff in memory
 
@@ -183,7 +183,10 @@ class Pipeline:
 
         # From here on, the agent's workspace is data, not a repository we trust.
         await self._reap_untrusted_processes()
-        _remove_sandbox_stubs(work.path, existed)
+        if settings.sandbox:
+            # shortcut: an empty package.json/.npmrc... the agent meant to add is dropped too;
+            # compare against the CLI's own stub list if that ever matters.
+            _remove_sandbox_stubs(work.path, existed)
         publish = await GitRepo.clone(
             clone_url,
             job_dir / "publish",
@@ -195,7 +198,7 @@ class Pipeline:
         publish_config = publish.config_bytes()
         try:
             await publish.checkout_new_branch(job.branch, base_sha)
-        except SCMError:  # the base branch moved past the shallow history since the first clone
+        except SCMError:  # base commit not reachable from the publish clone (base moved far)
             raise SCMError(
                 f"{settings.base_branch} moved too far during the run; re-run the ticket"
             ) from None
@@ -407,9 +410,9 @@ def _public_error(exc: Exception, detail: str) -> str:
 
 
 def _remove_sandbox_stubs(workspace: Path, existed: set[str]) -> None:
-    """Delete the sandbox's leftover mount points: new, empty, and not symlinks.
+    """Delete the sandbox's leftover mount points: new, empty regular files at the root.
 
-    Parents come after their children in ``_SANDBOX_STUBS``, so they are empty by then.
+    Root-level names only, and never through a symlink: nothing outside the workspace.
     """
     for name in _SANDBOX_STUBS:
         path = workspace / name
@@ -417,5 +420,3 @@ def _remove_sandbox_stubs(workspace: Path, existed: set[str]) -> None:
             continue
         if path.is_file() and path.stat().st_size == 0:
             path.unlink()
-        elif path.is_dir() and not any(path.iterdir()):
-            path.rmdir()

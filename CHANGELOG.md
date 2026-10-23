@@ -25,8 +25,10 @@ All notable changes to this project are documented here. The format follows
   or committer email than `T2P_COMMIT_AUTHOR_EMAIL` (a reviewer's fixups or amends are never
   discarded); the push itself uses `--force-with-lease`, so a concurrent push is not lost.
 - `T2P_SANDBOX_READONLY_PATHS` expands `~`.
-- Empty mount points Claude Code's sandbox leaves (`package.json`, `.npmrc`, `.claude/agents`...)
-  are removed before publishing.
+- Empty mount-point files Claude Code's sandbox leaves (`package.json`, `.npmrc`,
+  `.gitmodules`...) are removed before publishing.
+- The sandbox check runs bwrap once: installed but unable to create namespaces (an unprivileged
+  container) now fails the job before any spend instead of failing every test run.
 - Fork mode publishes from a full clone, so a fork far behind the target can still be pushed to.
 - The agent's tool set is exactly the allowlist (no `Monitor`, cron, remote triggers or
   ToolSearch), with no MCP server; the guard denies any other tool. Ticket comments show
