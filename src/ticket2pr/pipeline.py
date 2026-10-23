@@ -356,6 +356,10 @@ class Pipeline:
             # Fail closed: whatever the unstage missed must not be pushed.
             if any(policy.is_protected(path) for path in changes.files):
                 raise PolicyViolationError("a protected path could not be unstaged")
+        if changes.empty and excluded:
+            raise PolicyViolationError(
+                "the change only touches protected paths (T2P_PROTECTED_PATHS); nothing to commit"
+            )
         if changes.empty:
             raise AgentError("the agent finished without changing any file")
         if len(changes.files) > self._settings.max_changed_files:

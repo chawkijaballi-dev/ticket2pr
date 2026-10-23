@@ -369,7 +369,10 @@ def test_cli_version() -> None:
     assert "ticket2pr" in result.output
 
 
-def test_cli_run_then_list_jobs(cli_env: None, tickets_dir: Path, repos_dir: Path) -> None:
+def test_cli_run_then_list_jobs(
+    cli_env: None, tickets_dir: Path, repos_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("T2P_FORK_OWNER", "bot")  # ignored: local repositories have no forks
     args = ["run", "CALC-1", "--tickets-dir", str(tickets_dir), "--repos-dir", str(repos_dir)]
     result = runner.invoke(cli.app, args)
     assert result.exit_code == 0, result.output

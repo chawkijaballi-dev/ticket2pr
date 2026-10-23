@@ -98,6 +98,8 @@ def run(
     if repo is not None and not REPO_RE.fullmatch(repo):
         raise typer.BadParameter(f"--repo {repo!r} is not owner/name")
     settings = _settings()
+    if repos_dir is not None:  # local repositories have no forks
+        settings = settings.model_copy(update={"fork_owner": ""})
     options = RunOptions(require_label=require_label, keep_workspace=keep_workspace)
 
     async def _run() -> Job:

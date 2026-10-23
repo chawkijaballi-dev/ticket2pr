@@ -477,6 +477,18 @@ async def test_global_git_config_is_ignored(
     assert git(attacker, "branch", "--list").strip() == ""
 
 
+async def test_a_change_to_protected_paths_only_says_so(
+    make_pipeline: MakePipeline, store: JobStore
+) -> None:
+    def ci_only(task: AgentTask) -> None:  # runs twice: the tests stay red
+        (task.workspace / ".github" / "workflows").mkdir(parents=True, exist_ok=True)
+        (task.workspace / ".github" / "workflows" / "ci.yml").write_text("on: push\n")
+
+    job = await make_pipeline(ScriptedAgent([ci_only])).run(claim(store, "CALC-1"))
+    assert job.status is JobStatus.FAILED
+    assert "only touches protected paths" in (job.error or "")
+
+
 async def test_unusual_protected_path_names_are_not_committed(
     make_pipeline: MakePipeline, store: JobStore, repos_dir: Path
 ) -> None:

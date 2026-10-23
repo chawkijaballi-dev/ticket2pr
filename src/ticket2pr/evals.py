@@ -63,7 +63,7 @@ class EvalResult:
     cost_usd: float
     total_tokens: int
     turns: int
-    duration_s: float
+    agent_duration_s: float  # the agent's own runs, not cloning, tests or grading
     error: str | None = None
     cost_capped: bool = False  # cost_usd is the budget cap, not a measurement (e.g. a timeout)
 
@@ -195,7 +195,7 @@ async def _run_task(
         cost_capped=job.usage.cost_capped,
         total_tokens=job.usage.total_tokens,
         turns=job.usage.turns,
-        duration_s=job.usage.duration_s,
+        agent_duration_s=job.usage.duration_s,
         error=job.error if job.status is JobStatus.FAILED else None,
     )
 

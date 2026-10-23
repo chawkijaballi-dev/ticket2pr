@@ -48,6 +48,9 @@ All notable changes to this project are documented here. The format follows
 - Sockets, FIFOs and device files left in the workspace are not copied to the publish clone.
 - An unexpected (non-SDK) agent error, or a timeout after the run's result arrived, no longer
   loses the attempt's spend or an earlier attempt's draft PR.
+- A change that only touches protected paths fails as such, not as "no change"; `run
+  --repos-dir` ignores `T2P_FORK_OWNER` (local repositories have no forks); the eval report's
+  `duration_s` is renamed `agent_duration_s` (it never counted cloning, tests or grading).
 - Local ticket files with a non-list `labels` are refused (a bare string was split into
   letters); eval tasks without `solution/` are refused at discovery.
 - Job workspaces are deleted even when a run left read-only directories (such as Go's module
