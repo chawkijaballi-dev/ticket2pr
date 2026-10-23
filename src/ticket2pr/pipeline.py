@@ -113,6 +113,7 @@ class Pipeline:
             # Shutdown or Ctrl-C: leave a terminal status so the ticket is not blocked forever.
             job.status = JobStatus.FAILED
             job.error = "interrupted before completion"
+            self._store.save(job)  # before any network I/O: a SIGKILL may follow shortly
             # Best effort, briefly: otherwise the labelled ticket just never hears back.
             with suppress(TimeoutError):
                 async with asyncio.timeout(10):

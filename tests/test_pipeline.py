@@ -137,13 +137,24 @@ async def test_agent_error_outcome_fails_job(make_pipeline: MakePipeline, store:
 
 
 async def test_cancelled_attempt_counts_its_whole_budget(
-    make_pipeline: MakePipeline, store: JobStore, tickets_dir: Path
+    make_pipeline: MakePipeline,
+    store: JobStore,
+    tickets_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class Hanging(ScriptedAgent):
         async def run(self, task: AgentTask) -> AgentResult:
             await asyncio.sleep(3600)
             raise AssertionError
 
+    statuses_at_comment: list[JobStatus] = []
+    original = LocalTracker.comment
+
+    async def comment(self: LocalTracker, key: str, body: str) -> None:
+        statuses_at_comment.append(store.list()[0].status)  # already recorded?
+        await original(self, key, body)
+
+    monkeypatch.setattr(LocalTracker, "comment", comment)
     run = asyncio.create_task(make_pipeline(Hanging([])).run(claim(store, "CALC-1")))
     await asyncio.sleep(0.5)
     run.cancel()
@@ -153,6 +164,7 @@ async def test_cancelled_attempt_counts_its_whole_budget(
     assert job.usage.cost_capped
     assert job.usage.cost_usd == pytest.approx(2.0)  # the fixture's max_budget_usd
     assert "re-add the label" in (tickets_dir / "CALC-1.comments.md").read_text()
+    assert statuses_at_comment == [JobStatus.FAILED]  # saved before the network call
 
 
 async def test_protected_path_left_staged_fails_closed(

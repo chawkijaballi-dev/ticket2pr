@@ -38,7 +38,8 @@ Every PR states exactly what it cost.
 Teams pile up small, well-defined tickets: simple bugs, minor changes, test fixes. They take
 developer time for little value. ticket2pr handles them automatically, without the risk:
 
-- code runs isolated: sandboxed, no secret visible to the agent;
+- code runs isolated: sandboxed (or in a dedicated container), with ticket2pr's tokens
+  hidden from the agent (see the [security model](docs/security.md));
 - spend is capped: dollars and agent turns per ticket;
 - **a human always reviews**: ticket2pr opens the PR, it never merges it.
 

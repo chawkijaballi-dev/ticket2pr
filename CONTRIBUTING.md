@@ -15,8 +15,8 @@ make eval      # offline eval suite (oracle agent)
 - **Types:** `mypy --strict` must pass, tests included. Prefer frozen Pydantic models or
   frozen dataclasses for data, `Protocol`s for seams.
 - **Tests:** every behaviour change comes with a test. The suite is offline: use the
-  `ScriptedAgent`, `LocalHost` and `LocalTracker` fixtures from `tests/conftest.py` rather
-  than mocks of internals. Network calls are mocked with `respx`.
+  fixtures in `tests/conftest.py` (`settings`, `repos_dir`, `tickets_dir`, `store`,
+  `make_pipeline`) and its `ScriptedAgent` rather than mocks of internals. Network calls are mocked with `respx`.
 - **Errors:** raise a `Ticket2PRError` subclass for anything a user can cause or fix; the
   pipeline turns those into job statuses.
 - **Security:** changes to `agent/guard.py`, `scm/git.py`, `verify.py` or the agent options

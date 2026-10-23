@@ -1,7 +1,9 @@
 """Tool-call guardrails, enforced in a ``PreToolUse`` hook before any tool runs.
 
-This is defence in depth on top of the Bash sandbox: it keeps file tools inside the
-workspace, protects sensitive paths, and blocks git commands that only the harness may run.
+For Bash it is defence in depth on top of the OS sandbox. For the file tools, which run in
+the Claude Code process outside that sandbox, it is the only thing keeping writes inside the
+workspace (docs/security.md). It also protects sensitive paths and blocks git commands that
+only the harness may run.
 It is deliberately conservative: a false positive costs the agent one retry, a false
 negative could cost a leaked credential.
 """
