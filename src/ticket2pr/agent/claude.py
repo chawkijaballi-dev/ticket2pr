@@ -192,6 +192,9 @@ class ClaudeAgent:
                 **({"ANTHROPIC_API_KEY": self._api_key} if self._api_key else {}),
                 "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
                 "CLAUDE_CODE_TMPDIR": str(agent_tmp),
+                # No background shells, not even a timed-out command moved to the background:
+                # a process alive while a file tool acts could race the guard (guard.py).
+                "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "PYTHONNOUSERSITE": "1",  # no usercustomize.py planted in $HOME by a past job
             },

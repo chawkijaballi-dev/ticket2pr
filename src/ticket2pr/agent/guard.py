@@ -39,7 +39,8 @@ class Policy:
             if tool_input.get("run_in_background"):
                 # The file tools run outside the OS sandbox and act after this check: a
                 # sandboxed process left running could swap a symlink in between. Without
-                # background commands, each Bash sandbox (PID namespace) ends with its command.
+                # background commands (also disabled in Claude Code, see claude.py), each Bash
+                # sandbox (PID namespace) ends with its command.
                 return "background commands are not allowed"
             return self._check_bash(str(tool_input.get("command", "")))
         for key in _PATH_KEYS:

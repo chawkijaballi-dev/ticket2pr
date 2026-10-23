@@ -50,9 +50,10 @@ The file tools (Read, Write, Edit) are the exception: they run in the Claude Cod
 outside the OS sandbox. Reads are also refused outside the workspace by Claude Code itself
 (`blockReadsOutsideWorkingDirectories`), but **writes are confined by the guard alone**. The
 guard resolves symlinks before the tool acts, so it would lose a race against a process
-swapping a symlink in between; that is why background Bash commands are blocked: in sandbox
-mode each command's PID namespace ends with it, so no agent process runs while a file tool
-does. Without the sandbox this does not hold (see deployment guidance): run one container per
+swapping a symlink in between. That is why Claude Code's background tasks are disabled
+(`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS`, which also stops it from moving a timed-out command to
+the background) and the guard refuses `run_in_background`: in sandbox mode each command's PID
+namespace ends with it, so no agent process runs while a file tool does. Without the sandbox this does not hold (see deployment guidance): run one container per
 job, or keep `T2P_SANDBOX=true`, when tickets come from untrusted reporters.
 
 Residual risks:

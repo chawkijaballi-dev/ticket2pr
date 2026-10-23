@@ -21,7 +21,8 @@ All notable changes to this project are documented here. The format follows
   (by this version: older kept workspaces have no `.keep` marker and are removed);
   git aborts a clone or push stalled under 1 KB/s for 60 s.
 - A gracefully interrupted job tells the ticket to re-add the label.
-- Background Bash commands are refused: they could race the file tools, which run outside
+- Background Bash commands are refused, and Claude Code's background tasks disabled (no
+  auto-backgrounding of timed-out commands): they could race the file tools, which run outside
   the OS sandbox and are confined by the guard alone (now documented).
 - The file-count limit no longer reports the agent's exact count on the ticket.
 - Read-only toolchain paths that contain a hidden directory (such as `$HOME`) are not

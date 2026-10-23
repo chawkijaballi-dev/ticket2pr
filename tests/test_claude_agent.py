@@ -234,6 +234,7 @@ async def test_options_lock_down_the_agent(task: AgentTask) -> None:
     }
     assert agent_tmp.is_dir()
     assert options.env["CLAUDE_CODE_TMPDIR"] == str(agent_tmp)
+    assert options.env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
     assert isinstance(options.settings, str)
     assert json.loads(options.settings) == {
         "permissions": {"blockReadsOutsideWorkingDirectories": True}
