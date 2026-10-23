@@ -15,6 +15,7 @@ out of reach.
 from __future__ import annotations
 
 import ctypes
+import functools
 import logging
 import os
 import shutil
@@ -47,6 +48,7 @@ def missing_sandbox_tools(platform: str = sys.platform) -> list[str]:
     return missing
 
 
+@functools.cache  # once per process: run before every job, it must not block the loop each time
 def _bwrap_works() -> bool:
     """Installed is not enough: an unprivileged container, for one, forbids user namespaces."""
     try:

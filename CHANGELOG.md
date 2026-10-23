@@ -27,8 +27,9 @@ All notable changes to this project are documented here. The format follows
 - `T2P_SANDBOX_READONLY_PATHS` expands `~`.
 - Empty mount-point files Claude Code's sandbox leaves (`package.json`, `.npmrc`,
   `.gitmodules`...) are removed before publishing.
-- The sandbox check runs bwrap once: installed but unable to create namespaces (an unprivileged
-  container) now fails the job before any spend instead of failing every test run.
+- The sandbox check also starts bwrap (once per process): installed but unable to create
+  namespaces (an unprivileged container) now fails the job before any spend instead of
+  failing every test run, and `doctor` says what is missing.
 - Fork mode publishes from a full clone, so a fork far behind the target can still be pushed to.
 - The agent's tool set is exactly the allowlist (no `Monitor`, cron, remote triggers or
   ToolSearch), with no MCP server; the guard denies any other tool. Ticket comments show

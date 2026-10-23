@@ -19,6 +19,7 @@ from ticket2pr.errors import ConfigurationError
 from ticket2pr.redaction import MASK, Redactor
 from ticket2pr.sandbox import (
     TestSandbox,
+    _bwrap_works,
     become_subreaper,
     ensure_sandbox_available,
     harden_service_process,
@@ -53,6 +54,16 @@ def test_missing_sandbox_tools(
     monkeypatch.setattr("shutil.which", which.get)
     monkeypatch.setattr("ticket2pr.sandbox._bwrap_works", lambda: True)
     assert missing_sandbox_tools(platform) == missing
+
+
+@needs_bwrap
+def test_bwrap_probe_starts_a_real_sandbox() -> None:
+    assert _bwrap_works.__wrapped__() is True
+
+
+def test_bwrap_probe_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PATH", "")  # bwrap not found: OSError
+    assert _bwrap_works.__wrapped__() is False
 
 
 def test_installed_bwrap_that_cannot_start_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:

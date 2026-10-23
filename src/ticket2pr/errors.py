@@ -27,6 +27,10 @@ class SCMError(Ticket2PRError):
         self.status_code = status_code  # HTTP status, for GitHub API errors
 
 
+class StaleBaseError(SCMError):
+    """The base branch moved too far during the run; a re-run fixes it."""
+
+
 class AgentError(Ticket2PRError):
     """The coding agent could not complete its run."""
 

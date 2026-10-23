@@ -197,9 +197,11 @@ async def test_base_branch_moved_during_the_run(
     assert job.status is JobStatus.FAILED
     assert "moved too far during the run" in (job.error or "")
     # git/OS errors can quote names the agent chose: the ticket only learns the kind of error.
-    comment = (tickets_dir / "CALC-1.comments.md").read_text()
-    assert "a git or GitHub operation failed" in comment
-    assert "moved too far" not in comment
+    # Worded by ticket2pr, with a remedy: the ticket gets it.
+    assert (
+        "moved too far during the run; re-run the ticket"
+        in (tickets_dir / "CALC-1.comments.md").read_text()
+    )
 
 
 async def test_protected_paths_are_never_committed(

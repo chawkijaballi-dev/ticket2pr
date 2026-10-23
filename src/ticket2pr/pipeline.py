@@ -42,6 +42,7 @@ from ticket2pr.errors import (
     ConfigurationError,
     PolicyViolationError,
     SCMError,
+    StaleBaseError,
     Ticket2PRError,
     TrackerError,
 )
@@ -199,7 +200,7 @@ class Pipeline:
         try:
             await publish.checkout_new_branch(job.branch, base_sha)
         except SCMError:  # base commit not reachable from the publish clone (base moved far)
-            raise SCMError(
+            raise StaleBaseError(
                 f"{settings.base_branch} moved too far during the run; re-run the ticket"
             ) from None
         await asyncio.to_thread(sync_tree, work.path, publish.path)
@@ -400,7 +401,7 @@ def _public_error(exc: Exception, detail: str) -> str:
     OS error can quote file names the agent chose: only messages ticket2pr writes itself
     (policy, agent outcome, configuration) are shown; the rest stay in the job record.
     """
-    if isinstance(exc, AgentError | PolicyViolationError | ConfigurationError):
+    if isinstance(exc, AgentError | PolicyViolationError | ConfigurationError | StaleBaseError):
         return detail
     if isinstance(exc, SCMError):
         return "a git or GitHub operation failed (details in the ticket2pr job record)"

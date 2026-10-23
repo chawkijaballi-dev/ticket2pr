@@ -164,6 +164,10 @@ def jobs(
 def doctor() -> None:
     """Check that the environment can run jobs."""
     settings = _settings()
+    missing = missing_sandbox_tools() if settings.sandbox else []
+    sandbox_check = "sandbox: bwrap + socat usable (or T2P_SANDBOX=false)" + (
+        f" — missing: {', '.join(missing)}" if missing else ""
+    )
     checks = {
         "git on PATH": shutil.which("git") is not None,
         "Claude credentials (API key, auth token or `claude` login)": _has_claude_credentials(
@@ -177,8 +181,7 @@ def doctor() -> None:
         "GitHub token": bool(settings.github_token.get_secret_value()),
         "webhook secret": bool(settings.jira_webhook_secret.get_secret_value()),
         "at least one project → repo mapping": bool(settings.repos),
-        "sandbox: bwrap + socat (or T2P_SANDBOX=false)": not settings.sandbox
-        or not missing_sandbox_tools(),
+        sandbox_check: not missing,
     }
     recommended = {
         "pushes to a bot-owned fork (T2P_FORK_OWNER), so CI secrets stay out of reach": bool(
