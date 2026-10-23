@@ -47,7 +47,12 @@ from ticket2pr.errors import (
     TrackerError,
 )
 from ticket2pr.redaction import Redactor
-from ticket2pr.sandbox import ensure_sandbox_available, kill_descendants, sandbox_profile
+from ticket2pr.sandbox import (
+    ensure_sandbox_available,
+    kill_descendants,
+    remove_git_dir,
+    sandbox_profile,
+)
 from ticket2pr.scm.git import GitAuth, GitRepo, sync_tree
 from ticket2pr.scm.host import RepoHost
 from ticket2pr.store import JobStore
@@ -183,7 +188,7 @@ class Pipeline:
         # The agent gets a plain tree, not a repository: Claude Code itself runs git in its
         # working directory (unsandboxed), so a .git the tests or the agent could write to
         # would let them plant config (a filter, fsmonitor) that it then executes.
-        _drop_git_dir(work.path)
+        remove_git_dir(work.path)
 
         test_command = settings.test_command or detect_test_command(work.path)
         existed = {name for name in _SANDBOX_STUBS if (work.path / name).exists()}
@@ -290,7 +295,7 @@ class Pipeline:
                 feedback=feedback,
                 budget_usd=remaining,
             )
-            _drop_git_dir(workspace)  # in case the previous attempt or its tests made one
+            remove_git_dir(workspace)  # in case the previous attempt or its tests made one
             try:
                 result = await self._agent.run(task)
             except asyncio.CancelledError:  # no cost report: count the attempt's whole budget
@@ -333,7 +338,7 @@ class Pipeline:
         return completed.model_copy(update={"denied_actions": tuple(denied)}), tests
 
     async def _run_tests(self, command: str | None, workspace: Path) -> TestReport:
-        _drop_git_dir(workspace)
+        remove_git_dir(workspace)
         return await run_tests(
             command,
             workspace,
@@ -431,12 +436,3 @@ def _remove_sandbox_stubs(workspace: Path, existed: set[str]) -> None:
             continue
         if path.is_file() and path.stat().st_size == 0:
             path.unlink()
-
-
-def _drop_git_dir(workspace: Path) -> None:
-    """Remove ``workspace/.git`` whatever it is (directory, file or symlink, never followed)."""
-    path = workspace / ".git"
-    if path.is_dir() and not path.is_symlink():
-        shutil.rmtree(path)
-    elif path.exists() or path.is_symlink():
-        path.unlink()

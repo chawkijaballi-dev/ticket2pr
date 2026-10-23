@@ -122,6 +122,19 @@ class TestSandbox:
         return command + argv
 
 
+def remove_git_dir(workspace: Path) -> None:
+    """Remove ``workspace/.git`` whatever it is (directory, file or symlink, never followed).
+
+    Untrusted code must never hold a repository that a trusted git (ticket2pr's, or Claude
+    Code's own, which runs unsandboxed) would later read: its config can run commands.
+    """
+    path = workspace / ".git"
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    elif path.exists() or path.is_symlink():
+        path.unlink()
+
+
 def hidden_paths(settings: Settings) -> tuple[Path, ...]:
     """Directories untrusted code must not read: the service's home, data and working dirs."""
     hidden = {Path.home(), Path.cwd(), settings.data_dir}

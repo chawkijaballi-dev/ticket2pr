@@ -28,6 +28,7 @@ from ticket2pr.sandbox import (
     kill_descendants,
     make_process_undumpable,
     missing_sandbox_tools,
+    remove_git_dir,
     sandbox_profile,
     toolchain_paths,
 )
@@ -269,6 +270,34 @@ async def test_networked_sandbox_keeps_the_resolver_config(workspace: Path) -> N
     report = await run_tests(
         "grep -q nameserver /etc/resolv.conf", workspace, timeout_s=30, sandbox=networked
     )
+    assert report.passed, report.output_tail
+
+
+def test_remove_git_dir_never_follows_a_symlink(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep").write_text("x")
+    for kind in ("dir", "file", "symlink"):
+        ws = tmp_path / kind
+        ws.mkdir()
+        target = ws / ".git"
+        if kind == "dir":
+            (target / "objects").mkdir(parents=True)
+        elif kind == "file":
+            target.write_text("gitdir: elsewhere\n")
+        else:
+            target.symlink_to(outside)
+        remove_git_dir(ws)
+        assert not target.exists()
+        assert not target.is_symlink()
+    assert (outside / "keep").exists()
+
+
+@needs_bwrap
+async def test_sandboxed_tests_run_in_a_clone(workspace: Path, sandbox: TestSandbox) -> None:
+    """The eval grader runs hidden tests in a fresh clone, which has a .git directory."""
+    (workspace / ".git" / "objects").mkdir(parents=True)
+    report = await run_tests("true", workspace, timeout_s=30, sandbox=sandbox)
     assert report.passed, report.output_tail
 
 

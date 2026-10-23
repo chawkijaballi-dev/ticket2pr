@@ -201,6 +201,14 @@ class ClaudeAgent:
                 # No background shells, not even a timed-out command moved to the background:
                 # a process alive while a file tool acts could race the guard (guard.py).
                 "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+                # Claude Code runs git in its working directory, outside any sandbox. The
+                # workspace has no .git (pipeline), but its root could itself look like a
+                # repository (HEAD, objects/, refs/, config): never discover one implicitly,
+                # nor in a parent directory.
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "safe.bareRepository",
+                "GIT_CONFIG_VALUE_0": "explicit",
+                "GIT_CEILING_DIRECTORIES": str(workspace.parent),
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "PYTHONNOUSERSITE": "1",  # no usercustomize.py planted in $HOME by a past job
             },

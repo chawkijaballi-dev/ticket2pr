@@ -19,7 +19,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from ticket2pr.domain import TestReport
-from ticket2pr.sandbox import TestSandbox
+from ticket2pr.sandbox import TestSandbox, remove_git_dir
 
 _TAIL_CHARS = 8_000
 _TAIL_BYTES = 4 * _TAIL_CHARS  # UTF-8: at most 4 bytes per character
@@ -80,7 +80,9 @@ async def run_tests(
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONNOUSERSITE"] = "1"
     argv = ["/bin/sh", "-c", command]
+    env["GIT_CEILING_DIRECTORIES"] = _git_ceiling(workspace)
     if sandbox is not None:
+        remove_git_dir(workspace)  # the sandbox mounts an unusable .git in its place
         env["TMPDIR"] = "/tmp"  # noqa: S108 - the sandbox's own tmpfs; the host's is hidden
         return await _execute(command, sandbox.wrap(argv, workspace), workspace, env, timeout_s)
     # Nothing contains these tests: give each run a fresh HOME and TMPDIR, so what a previous
@@ -138,6 +140,12 @@ async def _execute(
         output_tail=text[-_TAIL_CHARS:],
         duration_s=time.monotonic() - started,
     )
+
+
+def _git_ceiling(workspace: Path) -> str:
+    """Where git stops looking for a repository: never an enclosing one (a data dir inside a
+    checkout), whose config the tests would otherwise read."""
+    return str(workspace.resolve().parent)
 
 
 def _toolchain_homes() -> dict[str, str]:

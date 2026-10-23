@@ -20,7 +20,7 @@ from typing import Any
 _PATH_KEYS = ("file_path", "path")
 _WRITE_TOOLS = {"Write", "Edit"}
 _FORBIDDEN_GIT = {
-    "push", "commit", "reset", "rebase", "remote", "config", "filter-branch", "update-ref",
+    "push", "commit", "init", "reset", "rebase", "remote", "config", "filter-branch", "update-ref",
     "credential", "am", "cherry-pick", "merge", "tag", "worktree", "submodule",
 }  # fmt: skip
 _SHELL_SPLIT = re.compile(r"&&|\|\||[;|&\n()`]|\$\(")

@@ -56,7 +56,7 @@ def test_verify_signature() -> None:
     assert not verify_signature(SECRET.encode(), body, _sign(b"other"))
     assert not verify_signature(SECRET.encode(), body, "md5=abc")
     assert not verify_signature(SECRET.encode(), body, "sha256=é")  # junk is a 401, not a 500
-    assert not verify_signature(SECRET.encode(), body, "md5=abc")
+    assert not verify_signature(SECRET.encode(), body, None)
 
 
 @pytest.mark.parametrize(
@@ -198,7 +198,9 @@ def test_webhook_deduplicates_in_flight_jobs(client: TestClient) -> None:
     response = _post(client, _event())
     assert response.status_code == 200
     assert "already has a job" in response.json()["reason"]
-    runtime.store.fail_interrupted()  # the job ends; a replay of that delivery must not start one
+    job = runtime.store.list()[0]  # the in-flight job ends...
+    job.status = JobStatus.FAILED
+    runtime.store.save(job)  # ...and a replay of that delivery must still not start one
     assert _post(client, _event()).json()["reason"] == "duplicate delivery"
 
 

@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 _EVENTS = {"jira:issue_created", "jira:issue_updated"}
 _MAX_BODY_BYTES = 1_000_000
-# Jira's signature covers the body only: a captured delivery stays valid. Accepted bodies
+# Jira's signature covers the body only: a captured delivery stays valid. Triggering bodies
 # are remembered (bounded, per process) and old events refused, so replays start nothing.
 _MAX_REMEMBERED_DELIVERIES = 10_000
 _MAX_EVENT_AGE_MS = 60 * 60 * 1000
@@ -98,12 +98,13 @@ def create_app(
         key, reason = trigger_from_event(payload, settings.trigger_label)
         if key is not None and (reason := deliveries.refusal(body, payload)):
             key = None
-        if key is not None:  # whether or not it starts a job: a replay later must not either
-            deliveries.remember(body)
         if key is None:
             return JSONResponse({"accepted": False, "reason": reason}, status.HTTP_200_OK)
         queue: JobQueue = request.app.state.queue
         job = queue.submit(key)
+        # Whether or not it started a job (one may be in flight): a replay later must not.
+        # Only once submit worked, so Jira's retry of a delivery that errored still counts.
+        deliveries.remember(body)
         if job is None:
             return JSONResponse(
                 {"accepted": False, "reason": f"{key} already has a job in progress"},
@@ -192,11 +193,11 @@ class _Deliveries:
     """Signed, triggering bodies already received (bounded, per process)."""
 
     def __init__(self) -> None:
-        self._accepted: OrderedDict[str, None] = OrderedDict()
+        self._seen: OrderedDict[str, None] = OrderedDict()
 
     def refusal(self, body: bytes, payload: dict[str, Any]) -> str:
         """Why this delivery must not start a job, or ``""``."""
-        if hashlib.sha256(body).hexdigest() in self._accepted:
+        if hashlib.sha256(body).hexdigest() in self._seen:
             return "duplicate delivery"
         stamp = payload.get("timestamp")  # Jira stamps events in epoch milliseconds
         if isinstance(stamp, int) and time.time() * 1000 - stamp > _MAX_EVENT_AGE_MS:
@@ -204,9 +205,9 @@ class _Deliveries:
         return ""
 
     def remember(self, body: bytes) -> None:
-        self._accepted[hashlib.sha256(body).hexdigest()] = None
-        if len(self._accepted) > _MAX_REMEMBERED_DELIVERIES:
-            self._accepted.popitem(last=False)
+        self._seen[hashlib.sha256(body).hexdigest()] = None
+        if len(self._seen) > _MAX_REMEMBERED_DELIVERIES:
+            self._seen.popitem(last=False)
 
 
 def trigger_from_event(payload: Any, label: str) -> tuple[str | None, str]:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import subprocess
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from pathlib import Path
@@ -23,6 +25,7 @@ from pydantic import SecretStr
 
 from ticket2pr.agent.base import AgentTask
 from ticket2pr.agent.claude import ALLOWED_TOOLS, ClaudeAgent, usage_from_result
+from ticket2pr.agent.guard import Policy
 from ticket2pr.agent.prompts import RULES_REMINDER, build_prompt
 from ticket2pr.config import Settings, secret_env_names
 from ticket2pr.domain import AgentOutcome, Ticket
@@ -238,6 +241,7 @@ async def test_options_lock_down_the_agent(task: AgentTask) -> None:
     assert agent_tmp.is_dir()
     assert options.env["CLAUDE_CODE_TMPDIR"] == str(agent_tmp)
     assert options.env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
+    assert options.env["GIT_CONFIG_VALUE_0"] == "explicit"
     assert isinstance(options.settings, str)
     assert json.loads(options.settings) == {
         "permissions": {"blockReadsOutsideWorkingDirectories": True}
@@ -370,3 +374,23 @@ def test_prompt_fences_untrusted_text_and_ends_with_the_rules(task: AgentTask) -
     assert "TAIL" in prompt
     assert "HEAD" not in prompt  # cut to its tail
     assert prompt.endswith(RULES_REMINDER)
+
+
+def test_git_never_treats_the_workspace_root_as_a_repository(
+    task: AgentTask, tmp_path: Path
+) -> None:
+    """HEAD, objects/, refs/ and a config at the root would make it one: Claude Code's own
+    (unsandboxed) git must not discover it, nor run its fsmonitor."""
+    ws = task.workspace
+    marker = tmp_path / "pwned"
+    (ws / "HEAD").write_text("ref: refs/heads/main\n")
+    (ws / "objects").mkdir()
+    (ws / "refs").mkdir()
+    (ws / "config").write_text(
+        f"[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tworktree = .\n"
+        f'\tfsmonitor = "touch {marker}; false"\n'
+    )
+    options = _agent(Recorder(_result())).build_options(task, Policy(workspace=ws), 1.0)
+    env = {**os.environ, **{k: v for k, v in options.env.items() if k.startswith("GIT_")}}
+    subprocess.run(["git", "status"], cwd=ws, env=env, capture_output=True, check=False)
+    assert not marker.exists()
