@@ -14,7 +14,6 @@ from typing import Any, cast
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
-    ClaudeSDKError,
     HookContext,
     HookInput,
     HookJSONOutput,
@@ -109,8 +108,9 @@ class ClaudeAgent:
                         result = message
         except TimeoutError:
             logger.warning("agent timed out after %ss on %s", self._timeout_s, task.ticket.key)
-            return interrupted(AgentOutcome.TIMEOUT, last_text)
-        except ClaudeSDKError as exc:
+            if result is None:  # else the run finished and only the CLI's exit was slow
+                return interrupted(AgentOutcome.TIMEOUT, last_text)
+        except Exception as exc:  # the SDK also re-raises plain transport errors unwrapped
             # A failed run (budget, max turns, API error) yields its ResultMessage, then the CLI
             # exits non-zero and the SDK raises ResultError: the result already has the facts.
             if result is None:

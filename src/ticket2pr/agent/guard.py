@@ -4,7 +4,7 @@ For Bash it is defence in depth on top of the OS sandbox. For the file tools, wh
 the Claude Code process outside that sandbox, it is the only thing keeping writes inside the
 workspace (docs/security.md). It also protects sensitive paths and blocks git commands that
 only the harness may run.
-It is deliberately conservative: a false positive costs the agent one retry, a false
+It is deliberately conservative: a false positive costs the agent a rephrase, a false
 negative could cost a leaked credential.
 """
 

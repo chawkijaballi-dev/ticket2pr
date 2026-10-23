@@ -14,7 +14,7 @@ import logging
 from contextlib import suppress
 
 from ticket2pr.domain import Job, JobStatus
-from ticket2pr.pipeline import Pipeline, RunOptions
+from ticket2pr.pipeline import Pipeline
 from ticket2pr.store import JobStore
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ class JobQueue:
         self._pipeline = pipeline
         self._store = store
         self._workers = workers
-        self._queue: asyncio.Queue[tuple[Job, RunOptions]] = asyncio.Queue()
+        self._queue: asyncio.Queue[Job] = asyncio.Queue()
         self._tasks: list[asyncio.Task[None]] = []
 
     def start(self) -> None:
@@ -51,16 +51,16 @@ class JobQueue:
 
     def enqueue(self, job: Job) -> None:
         """Queue an already persisted job (e.g. one left ``queued`` by a previous process)."""
-        self._queue.put_nowait((job, RunOptions()))
+        self._queue.put_nowait(job)
 
     async def join(self) -> None:
         await self._queue.join()
 
     async def _work(self) -> None:
         while True:
-            job, options = await self._queue.get()
+            job = await self._queue.get()
             try:
-                await self._pipeline.run(job, options)
+                await self._pipeline.run(job)
             except Exception as exc:  # Pipeline.run records expected failures; last resort
                 logger.exception("worker crashed on job %s", job.id)
                 job.status = JobStatus.FAILED

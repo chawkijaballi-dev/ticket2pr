@@ -14,7 +14,7 @@ from pydantic import SecretStr
 
 from ticket2pr.config import CLAUDE_CREDENTIAL_ENV_VARS, OTHER_CREDENTIAL_ENV_VARS, Settings
 
-MASK = "[REDACTED]"
+MASK = "REDACTED"  # no brackets: it lands after _inert and must not form a [link](url)
 _MIN_SECRET_LEN = 8  # shorter values would mask ordinary words
 
 

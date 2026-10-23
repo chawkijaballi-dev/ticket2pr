@@ -231,16 +231,13 @@ class Pipeline:
             head=head,
             base=settings.base_branch,
             title=render.pr_title(ticket),
-            body=self._redactor.redact(
-                render.pr_body(
-                    ticket=ticket,
-                    agent=agent,
-                    usage=job.usage,
-                    changes=changes,
-                    tests=tests,
-                    model=settings.model,
-                    excluded=excluded,
-                )
+            body=self._pr_body(
+                ticket=ticket,
+                agent=agent,
+                usage=job.usage,
+                changes=changes,
+                tests=tests,
+                excluded=excluded,
             ),
             draft=settings.draft_on_test_failure and not tests.passed,
         )
@@ -367,6 +364,36 @@ class Pipeline:
         if self._redactor.contains_secret(await repo.staged_diff(_MAX_DIFF_BYTES)):
             raise PolicyViolationError("the change contains a configured secret; not pushing it")
         return changes, excluded
+
+    def _pr_body(
+        self,
+        *,
+        ticket: Ticket,
+        agent: AgentResult,
+        usage: Usage,
+        changes: ChangeSet,
+        tests: TestReport,
+        excluded: tuple[str, ...],
+    ) -> str:
+        # Masked before rendering too: escaping can split a secret (``#`` gains a zero-width
+        # space), and the mask must not meet the agent's escaped Markdown.
+        redact = self._redactor.redact
+        agent = agent.model_copy(
+            update={
+                "summary": redact(agent.summary),
+                "denied_actions": tuple(map(redact, agent.denied_actions)),
+            }
+        )
+        body = render.pr_body(
+            ticket=ticket.model_copy(update={"title": redact(ticket.title)}),
+            agent=agent,
+            usage=usage,
+            changes=changes,
+            tests=tests.model_copy(update={"output_tail": redact(tests.output_tail)}),
+            model=self._settings.model,
+            excluded=tuple(map(redact, excluded)),
+        )
+        return redact(body)
 
     async def _own_branch_head(
         self, repo: GitRepo, url: str, branch: str, auth: GitAuth | None

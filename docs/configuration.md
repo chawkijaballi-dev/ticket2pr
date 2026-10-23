@@ -13,7 +13,7 @@ name, `ANTHROPIC_API_KEY`, in the environment or in `.env`.
 | `T2P_JIRA_EMAIL` | *(empty)* | Account that owns the API token. |
 | `T2P_JIRA_API_TOKEN` | *(secret)* | Jira API token. |
 | `T2P_JIRA_WEBHOOK_SECRET` | *(secret)* | Shared secret Jira signs webhooks with (required by serve). |
-| `T2P_TRIGGER_LABEL` | `ticket2pr` | Only tickets carrying this label are processed. |
+| `T2P_TRIGGER_LABEL` | `ticket2pr` | Webhook jobs need this label (`run` checks it only with --require-label). |
 | `T2P_GITHUB_TOKEN` | *(secret)* | Fine-grained token: Contents + Pull requests (read/write). |
 | `T2P_GITHUB_API_URL` | `https://api.github.com` | Change for GitHub Enterprise Server. |
 | `T2P_REPOS` | `{}` | Jira project key → GitHub repo, e.g. {"PROJ": "acme/api"}. |
@@ -35,7 +35,7 @@ name, `ANTHROPIC_API_KEY`, in the environment or in `.env`.
 | `T2P_TEST_COMMAND` | *(empty)* | Overrides auto-detection when set. |
 | `T2P_TEST_TIMEOUT_S` | `900` | Test run limit, in seconds. |
 | `T2P_MAX_CHANGED_FILES` | `25` | Larger changes fail the job instead of opening a PR. |
-| `T2P_PROTECTED_PATHS` | `[".github/", ".git/", "**/.env", "**/*.pem", "**/*.key"]` | Glob patterns the agent may neither edit nor commit. |
+| `T2P_PROTECTED_PATHS` | `[".github/", ".git/", "**/.env", "**/*.pem", "**/*.key"]` | Glob patterns never committed; the agent's file tools may not write them (its Bash commands are not checked). |
 | `T2P_DRAFT_ON_TEST_FAILURE` | `true` | Open PRs as drafts when the tests fail or are missing. |
 | `T2P_DATA_DIR` | `.ticket2pr` | Job database and workspaces live here. |
 | `T2P_API_TOKEN` | *(secret)* | Bearer token for the /jobs API; empty disables it. |

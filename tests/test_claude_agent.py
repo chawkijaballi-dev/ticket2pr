@@ -191,6 +191,34 @@ async def test_sdk_errors_are_contained(task: AgentTask) -> None:
     assert result.usage.cost_capped is True
 
 
+async def test_plain_exceptions_are_contained(task: AgentTask) -> None:
+    def failing(**_: Any) -> AsyncIterator[Any]:
+        async def stream() -> AsyncIterator[Any]:
+            nothing: tuple[Any, ...] = ()
+            for message in nothing:
+                yield message
+            raise Exception("Unknown error")  # noqa: TRY002 - what the SDK's message reader re-raises
+
+        return stream()
+
+    result = await _agent(failing).run(task)
+    assert result.outcome is AgentOutcome.ERROR
+    assert result.usage.cost_capped is True
+
+
+async def test_timeout_after_the_result_keeps_the_result(task: AgentTask) -> None:
+    def slow_exit(**_: Any) -> AsyncIterator[Any]:
+        async def stream() -> AsyncIterator[Any]:
+            yield _result()
+            await asyncio.sleep(10)
+
+        return stream()
+
+    result = await _agent(slow_exit, timeout_s=0.05).run(task)
+    assert result.outcome is AgentOutcome.COMPLETED
+    assert result.usage.cost_capped is False
+
+
 async def test_timeout(task: AgentTask) -> None:
     def slow(**_: Any) -> AsyncIterator[Any]:
         async def stream() -> AsyncIterator[Any]:

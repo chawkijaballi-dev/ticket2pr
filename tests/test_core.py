@@ -335,6 +335,10 @@ def test_commit_message_and_title() -> None:
     assert "Ticket: https://acme" in render.commit_message(TICKET)
     assert "Ticket:" not in render.commit_message(Ticket(key="PROJ-1", title="x"))
     assert render.pr_title(TICKET) == "[PROJ-1] Fix"
+    closing = Ticket(key="PROJ-1", title="Typo, closes #42 for @bob")
+    for text in (render.commit_message(closing), render.pr_title(closing)):
+        assert "#\u200b42" in text
+        assert "@\u200bbob" in text
 
 
 def test_pr_body_contents() -> None:
@@ -427,6 +431,21 @@ def test_pr_body_without_tests_or_summary() -> None:
     assert "not** verified" in body
     assert "did not provide a summary" in body
     assert "Guardrail events" not in body
+
+
+def test_pr_body_bounds_guardrail_events() -> None:
+    body = render.pr_body(
+        ticket=TICKET,
+        agent=AgentResult(outcome=AgentOutcome.COMPLETED, denied_actions=("x" * 1000,) * 250),
+        usage=Usage(),
+        changes=ChangeSet(files=("a.py",)),
+        tests=TestReport(command=None, passed=False),
+        model="m",
+        excluded=(".env",),
+    )
+    assert body.count("- Blocked:") == 20
+    assert "and 231 more" in body
+    assert len(body) < 20_000
 
 
 @pytest.mark.parametrize(

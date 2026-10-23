@@ -40,7 +40,8 @@ class Settings(BaseSettings):
         description="Shared secret Jira signs webhooks with (required by serve).",
     )
     trigger_label: str = Field(
-        default="ticket2pr", description="Only tickets carrying this label are processed."
+        default="ticket2pr",
+        description="Webhook jobs need this label (`run` checks it only with --require-label).",
     )
 
     # ── GitHub ────────────────────────────────────────────────────────
@@ -115,7 +116,8 @@ class Settings(BaseSettings):
     )
     protected_paths: list[str] = Field(
         default_factory=lambda: [".github/", ".git/", "**/.env", "**/*.pem", "**/*.key"],
-        description="Glob patterns the agent may neither edit nor commit.",
+        description="Glob patterns never committed; the agent's file tools may not write them "
+        "(its Bash commands are not checked).",
     )
     draft_on_test_failure: bool = Field(
         default=True, description="Open PRs as drafts when the tests fail or are missing."

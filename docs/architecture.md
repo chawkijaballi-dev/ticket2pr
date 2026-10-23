@@ -58,7 +58,7 @@ as `failed`. A graceful stop cancels in-flight runs, which record themselves as 
 
 ## Budget and retries
 
-The pipeline makes at most `max_attempts` (default 2) agent runs. Each run receives
+The pipeline makes at most two agent runs (`RunOptions.max_attempts`, not a setting). Each run receives
 `max_budget_usd − spent_so_far` as its SDK budget, and a retry is skipped when less than
 $0.25 remains. A retry only happens when the agent finished normally but the tests failed;
 the failing output (tail) is passed back as feedback.
