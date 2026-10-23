@@ -36,7 +36,7 @@ layers above it can fail.
 | Every ticket2pr git command ignores system and global config, disables hooks, fsmonitor and external attribute files, allows only https/file transports, and gets credentials through `GIT_CONFIG_*` environment variables (never argv or a config file) | `scm/git.py` | T2, T4 |
 | Protected paths unstaged before commit and listed on the PR; paths parsed NUL-separated so unusual names cannot slip through | `pipeline.py`, `scm/git.py` | T5 |
 | A staged change containing any configured secret is refused; secrets are masked in PR bodies, ticket comments, job errors and the feedback given to the agent | `redaction.py`, `pipeline.py` | T2, T5 |
-| Per-ticket dollar budget shared across retries (an interrupted run counts as its whole budget), turn cap, wall-clock timeout, changed-files cap | `config.py`, `agent/claude.py`, `pipeline.py` | T6 |
+| Per-ticket dollar budget shared across retries (a timed-out run counts as its whole budget), turn cap, wall-clock timeout, changed-files cap | `config.py`, `agent/claude.py`, `pipeline.py` | T6 |
 | HMAC-SHA256 webhook signature (constant-time compare), body size limit enforced while reading, label-added trigger, idempotent claims | `server.py`, `store.py` | T7, T6 |
 | Bearer token for the jobs API; endpoint disabled when unset | `server.py` | information disclosure |
 
@@ -85,6 +85,11 @@ Residual risks:
     a restart take their repository from `T2P_REPOS`, never from the database. The job
     history in `/data/jobs.sqlite3` can still be altered by untrusted code in this mode, so
     treat it as informational;
+  - the tests get a fresh `$HOME` and `$TMPDIR` per run and Python ignores user
+    site-packages, but the agent shares the container's `$HOME` (Claude Code keeps its
+    state there) and `/tmp` with later jobs: a job could leave files that a later agent run
+    picks up. Restart the container between tickets from different trust domains, or keep
+    `T2P_SANDBOX=true`;
   - keep the compose resource limits (`pids_limit`, `mem_limit`, `cpus`): unsandboxed tests
     share the container's limits until their timeout kills them;
   - or grant the container what bubblewrap needs (user namespaces, e.g. a seccomp profile

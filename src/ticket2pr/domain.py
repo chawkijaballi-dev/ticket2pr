@@ -10,7 +10,6 @@ from typing import ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 
 _KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]+-[1-9][0-9]*$")
-_SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
 def utcnow() -> datetime:
@@ -33,14 +32,6 @@ class Ticket(_Frozen):
     labels: tuple[str, ...] = ()
     issue_type: str = "Task"
     url: str | None = None
-
-    def branch_slug(self, max_len: int = 40) -> str:
-        """``PROJ-42`` + "Fix login bug!" → ``proj-42-fix-login-bug``."""
-        slug = _SLUG_RE.sub("-", f"{self.key} {self.title}".lower()).strip("-")
-        if len(slug) <= max_len:
-            return slug
-        cut = slug[: max_len + 1].rsplit("-", 1)[0]  # end on a word boundary
-        return cut if len(cut) > len(self.key) else slug[:max_len].rstrip("-")
 
 
 class Usage(_Frozen):
@@ -131,7 +122,7 @@ class JobStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
     SUCCEEDED = "succeeded"  # PR opened, tests green
-    NEEDS_REVIEW = "needs_review"  # draft PR opened, tests red or not run
+    NEEDS_REVIEW = "needs_review"  # PR opened but not verified (draft unless disabled/unavailable)
     FAILED = "failed"  # no PR opened
     SKIPPED = "skipped"  # the ticket lacks the trigger label
 

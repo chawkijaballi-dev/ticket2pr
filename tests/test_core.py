@@ -39,15 +39,6 @@ def test_ticket_keys(key: str, valid: bool) -> None:
     assert is_ticket_key(key) is valid
 
 
-def test_branch_slug() -> None:
-    ticket = Ticket(key="PROJ-42", title="Fix   the Login bug!! (urgent) and much more text here")
-    assert ticket.branch_slug() == "proj-42-fix-the-login-bug-urgent-and"
-    assert ticket.branch_slug(max_len=12) == "proj-42-fix"
-    assert Ticket(key="PROJ-42", title="Short").branch_slug() == "proj-42-short"
-    long_word = Ticket(key="PROJ-42", title="x" * 60)
-    assert long_word.branch_slug() == ("proj-42-" + "x" * 60)[:40]
-
-
 def test_ticket_rejects_bad_key() -> None:
     with pytest.raises(ValidationError):
         Ticket(key="nope", title="x")
@@ -256,11 +247,37 @@ async def test_run_tests_hides_secrets(tmp_path: Path, monkeypatch: pytest.Monke
     assert "CI=true" in report.output_tail
 
 
+async def test_unsandboxed_runs_get_a_fresh_home(tmp_path: Path) -> None:
+    """What one job leaves in $HOME or $TMPDIR is gone for the next one."""
+    plant = 'echo planted > "$HOME/.npmrc"; echo x > "$TMPDIR/x"'
+    await run_tests(plant, tmp_path, timeout_s=10, sandbox=None)
+    report = await run_tests(
+        'ls -A "$HOME"; echo "$PYTHONNOUSERSITE"', tmp_path, timeout_s=10, sandbox=None
+    )
+    assert report.output_tail == "1\n"
+
+
 async def test_run_tests_timeout_kills_process_group(tmp_path: Path) -> None:
     report = await run_tests("sleep 30 & sleep 30", tmp_path, timeout_s=0.3, sandbox=None)
     assert not report.passed
     assert report.exit_code is None
     assert "Timed out" in report.output_tail
+
+
+async def test_run_tests_does_not_wait_for_leftover_children(tmp_path: Path) -> None:
+    """A suite that exits but leaves a child holding the pipe is judged by its exit code."""
+    report = await run_tests("sleep 30 & echo ok; exit 0", tmp_path, timeout_s=10, sandbox=None)
+    assert report.passed
+    assert report.output_tail == "ok\n"
+    assert report.duration_s < 5
+
+
+async def test_run_tests_reports_only_the_tail(tmp_path: Path) -> None:
+    report = await run_tests(
+        "head -c 100000 /dev/zero | tr '\\0' x; echo END", tmp_path, timeout_s=10, sandbox=None
+    )
+    assert len(report.output_tail) == 8_000
+    assert report.output_tail.endswith("xEND\n")
 
 
 # ── render ──────────────────────────────────────────────────────────────

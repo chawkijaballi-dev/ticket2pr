@@ -3,7 +3,8 @@
 Deliberately simple. Jobs are persisted in SQLite before they are queued: on start the
 service re-enqueues the ``queued`` ones, and the runs a crash cut short (left ``running``)
 are marked failed. A graceful stop cancels in-flight runs, which record themselves as
-interrupted. Swapping this for Celery/RQ/Arq only means re-implementing ``submit``.
+interrupted. Swapping this for Celery/RQ/Arq means re-implementing ``submit``, ``enqueue``,
+``start`` and ``stop`` (restart recovery in ``server.start_queue`` calls ``enqueue`` directly).
 """
 
 from __future__ import annotations

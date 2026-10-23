@@ -44,6 +44,7 @@ from ticket2pr.verify import detect_test_command, run_tests
 logger = logging.getLogger(__name__)
 
 _MIN_RETRY_BUDGET_USD = 0.25
+_MAX_CHANGE_BYTES = 20 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,7 +140,7 @@ class Pipeline:
             clone_url, job_dir / "work", branch=settings.base_branch, auth=auth
         )
         base_sha = await work.head()
-        job.branch = settings.branch_prefix + ticket.branch_slug()
+        job.branch = settings.branch_prefix + ticket.key.lower()  # stable across title edits
         self._store.save(job)
 
         test_command = settings.test_command or detect_test_command(work.path)
@@ -293,6 +294,15 @@ class Pipeline:
             raise PolicyViolationError(
                 f"the change touches {len(changes.files)} files "
                 f"(limit {self._settings.max_changed_files})"
+            )
+        size = sum(
+            path.lstat().st_size
+            for path in (repo.path / name for name in changes.files)
+            if path.is_file() or path.is_symlink()
+        )
+        if size > _MAX_CHANGE_BYTES:  # the secret scan below holds the whole diff in memory
+            raise PolicyViolationError(
+                f"the changed files total {size} bytes (limit {_MAX_CHANGE_BYTES})"
             )
         if self._redactor.contains_secret(await repo.staged_diff()):
             raise PolicyViolationError("the change contains a configured secret; not pushing it")

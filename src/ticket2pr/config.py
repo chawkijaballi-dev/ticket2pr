@@ -98,8 +98,10 @@ class Settings(BaseSettings):
         "the test sandbox must still see (read-only).",
     )
     network_allowlist: list[str] = Field(
-        default_factory=lambda: ["pypi.org", "files.pythonhosted.org", "registry.npmjs.org"],
-        description="Domains the agent's sandboxed Bash may reach (package registries).",
+        default_factory=lambda: ["pypi.org", "files.pythonhosted.org"],
+        description="Domains the agent's sandboxed Bash may reach (package registries). Each is "
+        "also a way out for repository data: avoid registries that accept uploads on the same "
+        "host, such as registry.npmjs.org (npm publish).",
     )
 
     # ── Guardrails & verification ─────────────────────────────────────

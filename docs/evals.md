@@ -53,5 +53,6 @@ gate a release.
 
 Prefer small, realistic tickets with an unambiguous acceptance criterion that the hidden
 tests check, and make sure `repo/` contains visible tests in the same style (the agent
-should be able to infer how to test). Run `make eval` and `pytest tests/test_evals.py`: the
-oracle must resolve it and the README-only agent must not.
+should be able to infer how to test). Add its name to `TASK_NAMES` in `tests/test_evals.py`,
+then run `make eval` and `pytest tests/test_evals.py`: the oracle must resolve it and the
+README-only agent must not.

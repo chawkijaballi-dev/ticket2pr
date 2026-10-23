@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -22,6 +23,7 @@ from pydantic import SecretStr
 
 from ticket2pr.agent.base import AgentTask
 from ticket2pr.agent.claude import ALLOWED_TOOLS, ClaudeAgent, usage_from_result
+from ticket2pr.agent.prompts import RULES_REMINDER, build_prompt
 from ticket2pr.config import Settings, secret_env_names
 from ticket2pr.domain import AgentOutcome, Ticket
 from ticket2pr.errors import ConfigurationError
@@ -321,3 +323,13 @@ async def test_fails_closed_when_sandbox_cannot_start(
     assert query.calls == []  # the agent never started
     await _agent(query, sandbox=False).run(task)  # explicit opt-out still works
     assert len(query.calls) == 1
+
+
+def test_prompt_fences_untrusted_text_and_ends_with_the_rules(task: AgentTask) -> None:
+    feedback = "HEAD" + "x" * 6_000 + "TAIL"
+    prompt = build_prompt(replace(task, repo_guidelines="Use tabs.", feedback=feedback))
+    assert "<repository_guidelines>\nUse tabs.\n</repository_guidelines>" in prompt
+    assert "<test_output>" in prompt
+    assert "TAIL" in prompt
+    assert "HEAD" not in prompt  # cut to its tail
+    assert prompt.endswith(RULES_REMINDER)

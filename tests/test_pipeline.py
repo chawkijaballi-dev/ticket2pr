@@ -55,7 +55,7 @@ async def test_happy_path_opens_pr_and_comments(
 
     assert job.status is JobStatus.SUCCEEDED, job.error
     assert job.tests_passed is True
-    assert job.branch == "ticket2pr/calc-1-add-subtracts-instead-of-adding"
+    assert job.branch == "ticket2pr/calc-1"
     assert job.usage.cost_usd == pytest.approx(0.5)
     pr = _pr(job)
     assert pr["draft"] is False
@@ -117,8 +117,10 @@ async def test_no_retry_when_budget_is_spent(make_pipeline: MakePipeline, store:
 async def test_agent_without_changes_fails_and_reports(
     make_pipeline: MakePipeline, store: JobStore, tickets_dir: Path
 ) -> None:
-    job = await make_pipeline(ScriptedAgent([do_nothing])).run(claim(store, "CALC-1"))
+    agent = ScriptedAgent([do_nothing])
+    job = await make_pipeline(agent).run(claim(store, "CALC-1"))
     # Tests fail on the untouched repo, so the agent gets a retry before giving up.
+    assert len(agent.tasks) == 2
     assert job.status is JobStatus.FAILED
     assert job.error == "the agent finished without changing any file"
     assert job.pr_url is None
@@ -189,6 +191,19 @@ async def test_too_many_files_is_a_policy_violation(
     assert "touches 4 files (limit 2)" in (job.error or "")
 
 
+async def test_oversized_change_is_a_policy_violation(
+    make_pipeline: MakePipeline, store: JobStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def bloat(task: AgentTask) -> None:
+        fix_add(task)
+        (task.workspace / "blob.bin").write_bytes(b"x" * 2_000)
+
+    monkeypatch.setattr("ticket2pr.pipeline._MAX_CHANGE_BYTES", 1_000)
+    job = await make_pipeline(ScriptedAgent([bloat])).run(claim(store, "CALC-1"))
+    assert job.status is JobStatus.FAILED
+    assert "limit 1000" in (job.error or "")
+
+
 async def test_unlabelled_ticket_is_skipped_without_comment(
     make_pipeline: MakePipeline, store: JobStore, tickets_dir: Path
 ) -> None:
@@ -243,9 +258,13 @@ async def test_workspace_is_removed_unless_kept(
     assert (settings.workspaces_dir / f"job-{kept.id}" / "work" / "calc.py").exists()
 
 
-async def test_rerun_updates_the_existing_pr(make_pipeline: MakePipeline, store: JobStore) -> None:
+async def test_rerun_updates_the_existing_pr(
+    make_pipeline: MakePipeline, store: JobStore, tickets_dir: Path
+) -> None:
     pipeline = make_pipeline(ScriptedAgent([fix_add]))
     first = await pipeline.run(claim(store, "CALC-1"))
+    ticket = tickets_dir / "CALC-1.yaml"
+    ticket.write_text(ticket.read_text().replace("title: add()", "title: Renamed add()"))
     second = await pipeline.run(claim(store, "CALC-1"))
     assert first.pr_url == second.pr_url
 
@@ -304,7 +323,7 @@ async def test_global_git_config_is_ignored(
     assert git(attacker, "branch", "--list").strip() == ""
 
 
-async def test_non_ascii_protected_paths_are_not_committed(
+async def test_unusual_protected_path_names_are_not_committed(
     make_pipeline: MakePipeline, store: JobStore, repos_dir: Path
 ) -> None:
     def sneaky(task: AgentTask) -> None:
@@ -312,6 +331,11 @@ async def test_non_ascii_protected_paths_are_not_committed(
         (task.workspace / ".github" / "workflows").mkdir(parents=True)
         (task.workspace / ".github" / "workflows" / "évil.yml").write_text("on: push\n")
         (task.workspace / "clé.pem").write_text("key\n")
+        # Pathspec magic: unstaged literally, not read as ``x/.env`` / a glob.
+        (task.workspace / ":x").mkdir()
+        (task.workspace / ":x" / ".env").write_text("SECRET=1\n")
+        (task.workspace / ":(glob)a").mkdir()
+        (task.workspace / ":(glob)a" / "id.key").write_text("key\n")
 
     job = await make_pipeline(ScriptedAgent([sneaky])).run(claim(store, "CALC-1"))
     files = git(repos_dir / REPO, "show", "--name-only", "--format=", _branch(job)).split()

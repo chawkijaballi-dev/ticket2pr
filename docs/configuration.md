@@ -31,7 +31,7 @@ name, `ANTHROPIC_API_KEY`, in the environment or in `.env`.
 | `T2P_SANDBOX` | `true` | Run the agent's Bash and the repository's tests in a bubblewrap sandbox (Linux; needs bwrap and socat). Jobs fail when it cannot start. Disable only when the worker itself runs in an isolated, egress-restricted container. |
 | `T2P_TEST_NETWORK` | `false` | Give the sandboxed test run network access (e.g. when the test command installs dependencies, like `uv run pytest`). |
 | `T2P_SANDBOX_READONLY_PATHS` | `[]` | Extra toolchain directories under $HOME or the working directory that the test sandbox must still see (read-only). |
-| `T2P_NETWORK_ALLOWLIST` | `["pypi.org", "files.pythonhosted.org", "registry.npmjs.org"]` | Domains the agent's sandboxed Bash may reach (package registries). |
+| `T2P_NETWORK_ALLOWLIST` | `["pypi.org", "files.pythonhosted.org"]` | Domains the agent's sandboxed Bash may reach (package registries). Each is also a way out for repository data: avoid registries that accept uploads on the same host, such as registry.npmjs.org (npm publish). |
 | `T2P_TEST_COMMAND` | *(empty)* | Overrides auto-detection when set. |
 | `T2P_TEST_TIMEOUT_S` | `900` | Test run limit, in seconds. |
 | `T2P_MAX_CHANGED_FILES` | `25` | Larger changes fail the job instead of opening a PR. |

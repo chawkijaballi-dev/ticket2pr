@@ -12,6 +12,7 @@ import json
 import os
 import signal
 import sys
+import tempfile
 import time
 from contextlib import suppress
 from pathlib import Path
@@ -20,6 +21,8 @@ from ticket2pr.domain import TestReport
 from ticket2pr.sandbox import TestSandbox
 
 _TAIL_CHARS = 8_000
+_TAIL_BYTES = 4 * _TAIL_CHARS  # UTF-8: at most 4 bytes per character
+_DRAIN_TIMEOUT_S = 5.0
 # Not VIRTUAL_ENV: it would point tools such as `poetry run` at ticket2pr's own virtualenv.
 _ENV_PASSTHROUGH = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "UV_CACHE_DIR")
 
@@ -71,9 +74,20 @@ async def run_tests(
     # No bytecode caches: they would end up in the commit, and a stale .pyc (same size, same
     # mtime second) can make a retry test the previous attempt's code.
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONNOUSERSITE"] = "1"
     argv = ["/bin/sh", "-c", command]
     if sandbox is not None:
-        argv = sandbox.wrap(argv, workspace)
+        return await _execute(command, sandbox.wrap(argv, workspace), workspace, env, timeout_s)
+    # Nothing contains these tests: give each run a fresh HOME and TMPDIR, so what a previous
+    # job left there (~/.npmrc, tool configs, caches) cannot run inside this job's tests.
+    with tempfile.TemporaryDirectory(prefix="t2p-tests-", ignore_cleanup_errors=True) as scratch:
+        env["HOME"] = env["TMPDIR"] = scratch
+        return await _execute(command, argv, workspace, env, timeout_s)
+
+
+async def _execute(
+    command: str, argv: list[str], workspace: Path, env: dict[str, str], timeout_s: float
+) -> TestReport:
     started = time.monotonic()
     process = await asyncio.create_subprocess_exec(
         *argv,
@@ -84,16 +98,19 @@ async def run_tests(
         stderr=asyncio.subprocess.STDOUT,
         start_new_session=True,  # own process group, so a timeout kills every child too
     )
+    output = bytearray()
+
+    async def drain() -> None:
+        assert process.stdout is not None  # noqa: S101 - stdout=PIPE
+        while chunk := await process.stdout.read(65_536):
+            output.extend(chunk)
+            del output[:-_TAIL_BYTES]  # bounded: only the tail is reported
+
+    reader = asyncio.create_task(drain())
     try:
         async with asyncio.timeout(timeout_s):
-            output, _ = await process.communicate()
-    except asyncio.CancelledError:
-        _kill_group(process.pid)
-        await process.wait()
-        raise
+            await _exited(process)
     except TimeoutError:
-        _kill_group(process.pid)
-        await process.wait()
         return TestReport(
             command=command,
             passed=False,
@@ -101,6 +118,12 @@ async def run_tests(
             output_tail=f"Timed out after {timeout_s:.0f}s.",
             duration_s=time.monotonic() - started,
         )
+    finally:
+        _kill_group(process.pid)
+        await _exited(process)
+        # Killed children close the pipe; one that left the group could hold it forever.
+        await asyncio.wait({reader}, timeout=_DRAIN_TIMEOUT_S)
+        reader.cancel()
     text = output.decode("utf-8", "replace")
     return TestReport(
         command=command,
@@ -117,6 +140,16 @@ def _without_worker_venv(path: str) -> str:
         return path
     venv_bin = str(Path(sys.prefix) / "bin")
     return os.pathsep.join(entry for entry in path.split(os.pathsep) if entry != venv_bin)
+
+
+async def _exited(process: asyncio.subprocess.Process) -> None:
+    """Wait for the shell itself to exit.
+
+    Not ``process.wait()``: it also waits for EOF on the pipe, which a leftover child (a
+    server, ``cmd &``) keeps open long after the suite has finished.
+    """
+    while process.returncode is None:  # noqa: ASYNC110 - asyncio has no exit-only event
+        await asyncio.sleep(0.05)
 
 
 def _kill_group(pid: int) -> None:

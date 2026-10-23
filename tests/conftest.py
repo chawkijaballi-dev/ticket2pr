@@ -54,6 +54,8 @@ def _isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # Unsandboxed jobs reap every descendant of the service process, which here is pytest
     # itself. tests/test_sandbox.py exercises the real thing in a child process.
     monkeypatch.setattr("ticket2pr.pipeline.kill_descendants", lambda: 0)
+    # CLI tests would otherwise make pytest itself non-dumpable and a child subreaper.
+    monkeypatch.setattr("ticket2pr.cli.harden_service_process", lambda _settings: None)
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
     (tmp_path / "gitconfig").write_text(
         "[user]\n\tname = Test\n\temail = test@example.com\n[init]\n\tdefaultBranch = main\n"

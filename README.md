@@ -45,7 +45,7 @@ sequenceDiagram
     Jira->>API: webhook (label "ticket2pr" added), HMAC-signed
     API->>API: verify signature, dedupe, persist job, enqueue
     API->>Jira: fetch ticket (REST v3)
-    API->>Repo: clone base branch, create ticket2pr/<key>-<slug>
+    API->>Repo: clone base branch, create ticket2pr/<key>
     API->>Agent: ticket + repo guidelines + test command + budget
     Agent->>Repo: read / edit / run tests (guarded tools, sandboxed Bash)
     API->>Repo: run tests in the sandbox (no secrets, timeout)
@@ -153,8 +153,8 @@ exercise the real pipeline end to end, including attacks such as `.git/config` r
   virtualenv); repos without tests get draft PRs.
 - The sandbox needs Linux with bubblewrap; elsewhere, run the worker in an isolated
   container with `T2P_SANDBOX=false`.
-- The in-process queue suits a single replica. Several replicas need a shared queue (the
-  `JobQueue.submit` seam) and a shared database.
+- The in-process queue suits a single replica. Several replicas need a shared queue (replace
+  `JobQueue`'s `submit`/`enqueue`/`start`/`stop`) and a shared database.
 
 ## License
 

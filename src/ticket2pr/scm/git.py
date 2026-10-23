@@ -192,6 +192,8 @@ async def _git_bytes(
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": os.devnull,
         "GIT_ATTR_NOSYSTEM": "1",
+        # Paths come from the agent's workspace: never read ":x/.env" as pathspec magic.
+        "GIT_LITERAL_PATHSPECS": "1",
         "LC_ALL": "C",
         **(env or {}),
     }

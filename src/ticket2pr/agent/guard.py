@@ -57,7 +57,8 @@ class Policy:
 
     def _check_path(self, raw: str, *, write: bool) -> str | None:
         root = self.workspace.resolve()
-        candidate = Path(raw) if Path(raw).is_absolute() else root / raw
+        path = Path(raw).expanduser()  # Claude Code expands ~/ itself
+        candidate = path if path.is_absolute() else root / path
         resolved = candidate.resolve()
         if not resolved.is_relative_to(root):
             return f"{raw} is outside the workspace"
