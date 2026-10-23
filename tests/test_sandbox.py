@@ -227,6 +227,22 @@ async def test_sandbox_allows_workspace_writes_only(
 
 
 @needs_bwrap
+@pytest.mark.skipif(
+    not Path(os.path.realpath("/etc/resolv.conf")).is_relative_to("/run"),
+    reason="needs systemd-resolved's /etc/resolv.conf -> /run/...",
+)
+async def test_networked_sandbox_keeps_the_resolver_config(workspace: Path) -> None:
+    """Emptying /run must not take /etc/resolv.conf (and every DNS lookup) with it."""
+    networked = TestSandbox(hidden=(), network=True)
+    report = await run_tests(
+        "grep -q nameserver /etc/resolv.conf", workspace, timeout_s=30, sandbox=networked
+    )
+    assert report.passed, report.output_tail
+    offline = TestSandbox(hidden=())
+    assert "/run/systemd" not in " ".join(offline.wrap(["x"], workspace))
+
+
+@needs_bwrap
 async def test_sandbox_tmpdir_exists(
     workspace: Path, sandbox: TestSandbox, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -30,6 +30,8 @@ All notable changes to this project are documented here. The format follows
 - The sandbox check also starts bwrap (once per process): installed but unable to create
   namespaces (an unprivileged container) now fails the job before any spend instead of
   failing every test run, and `doctor` says what is missing.
+- With `T2P_TEST_NETWORK=true`, tests can resolve names on systemd-resolved hosts
+  (`/etc/resolv.conf` points into the emptied `/run`); the bwrap probe uses the tests' own profile.
 - Fork mode publishes from a full clone, so a fork far behind the target can still be pushed to.
 - The agent's tool set is exactly the allowlist (no `Monitor`, cron, remote triggers or
   ToolSearch), with no MCP server; the guard denies any other tool. Ticket comments show

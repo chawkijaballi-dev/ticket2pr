@@ -22,6 +22,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,14 +51,14 @@ def missing_sandbox_tools(platform: str = sys.platform) -> list[str]:
 
 @functools.cache  # once per process: run before every job, it must not block the loop each time
 def _bwrap_works() -> bool:
-    """Installed is not enough: an unprivileged container, for one, forbids user namespaces."""
+    """Installed is not enough: an unprivileged container, for one, forbids user namespaces.
+
+    Probes with the tests' own profile (fresh /proc included, which some containers refuse).
+    """
     try:
-        probe = subprocess.run(
-            ["bwrap", "--unshare-all", "--die-with-parent", "--ro-bind", "/", "/", "true"],  # noqa: S607 - same PATH lookup as the test sandbox
-            capture_output=True,
-            timeout=10,
-            check=False,
-        )
+        with tempfile.TemporaryDirectory(prefix="t2p-probe-") as workspace:
+            argv = TestSandbox(hidden=()).wrap(["true"], Path(workspace))
+            probe = subprocess.run(argv, capture_output=True, timeout=10, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return False
     return probe.returncode == 0
@@ -91,6 +92,11 @@ class TestSandbox:
         # process outside the sandbox.
         command += ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
         command += ["--tmpfs", "/tmp", "--tmpfs", "/run"]  # noqa: S108
+        resolv = Path(os.path.realpath("/etc/resolv.conf"))
+        if self.network and resolv.is_relative_to("/run") and resolv.is_file():
+            # systemd-resolved: /etc/resolv.conf points into the /run just emptied. The file
+            # alone, not its directory (which also holds the resolver's varlink socket).
+            command += ["--ro-bind", str(resolv), str(resolv)]
         for path in self.hidden:
             if path.exists():
                 command += ["--tmpfs", str(path)]
