@@ -47,7 +47,7 @@ from ticket2pr.errors import (
 )
 from ticket2pr.redaction import Redactor
 from ticket2pr.sandbox import ensure_sandbox_available, kill_descendants, sandbox_profile
-from ticket2pr.scm.git import GitRepo, sync_tree
+from ticket2pr.scm.git import GitAuth, GitRepo, sync_tree
 from ticket2pr.scm.host import RepoHost
 from ticket2pr.store import JobStore
 from ticket2pr.trackers.base import Tracker
@@ -164,6 +164,9 @@ class Pipeline:
         base_sha = await work.head()
         job.branch = settings.branch_prefix + ticket.key.lower()  # stable across title edits
         self._store.save(job)
+        push_repo, head = self._push_target(job.repo, job.branch)
+        push_url = self._host.clone_url(push_repo)
+        await self._own_branch_head(work, push_url, job.branch, auth)  # before any spend
 
         test_command = settings.test_command or detect_test_command(work.path)
         agent, tests = await self._agent_loop(job, ticket, work.path, test_command, options)
@@ -193,15 +196,8 @@ class Pipeline:
         # Before any authenticated network call from this clone (e.g. an injected insteadOf).
         if publish.config_bytes() != publish_config:
             raise PolicyViolationError("the publish clone's git config changed; not pushing")
-        push_repo, head = self._push_target(job.repo, job.branch)
-        push_url = self._host.clone_url(push_repo)
-        # The push replaces the branch: never over commits a person added to the PR.
-        author = await publish.remote_head_author(push_url, job.branch, auth=auth)
-        if author is not None and author != settings.commit_author_email:
-            raise PolicyViolationError(
-                f"{job.branch} has commits ticket2pr did not make; not overwriting them"
-            )
-        await publish.push(push_url, job.branch, auth=auth)
+        expected = await self._own_branch_head(publish, push_url, job.branch, auth)
+        await publish.push(push_url, job.branch, expected_sha=expected, auth=auth)
         pr = await self._host.open_or_update_pr(
             job.repo,
             head=head,
@@ -338,6 +334,24 @@ class Pipeline:
         if self._redactor.contains_secret(await repo.staged_diff(_MAX_DIFF_BYTES)):
             raise PolicyViolationError("the change contains a configured secret; not pushing it")
         return changes, excluded
+
+    async def _own_branch_head(
+        self, repo: GitRepo, url: str, branch: str, auth: GitAuth | None
+    ) -> str:
+        """The branch's current head (``""`` if absent), refusing one a person has touched.
+
+        The push replaces the branch: commits a reviewer added, or an amend (which keeps the
+        author but not the committer), must not be discarded.
+        """
+        remote = await repo.remote_head(url, branch, auth=auth)
+        if remote is None:
+            return ""
+        sha, author, committer = remote
+        if {author, committer} != {self._settings.commit_author_email}:
+            raise PolicyViolationError(
+                f"{branch} has commits ticket2pr did not make; not overwriting them"
+            )
+        return sha
 
     async def _report(self, job: Job, outcome: _Outcome | None, error: str | None) -> None:
         comment = render.tracker_comment(

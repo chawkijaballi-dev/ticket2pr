@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     commit_author_email: str = Field(
         default="ticket2pr@users.noreply.github.com",
         description="Commit author email. Also how re-runs recognise ticket2pr's own commits: "
-        "a branch whose head has another author email is never overwritten.",
+        "a branch whose head has another author or committer email is never overwritten.",
     )
 
     # ── Agent ─────────────────────────────────────────────────────────

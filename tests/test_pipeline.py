@@ -368,10 +368,55 @@ async def test_rerun_never_overwrites_a_persons_commits(
     git(clone, "push", "-q", "origin", branch)
     head = git(repos_dir / REPO, "rev-parse", branch)
 
-    second = await pipeline.run(claim(store, "CALC-1"))
+    agent = ScriptedAgent([fix_add])
+    second = await make_pipeline(agent).run(claim(store, "CALC-1"))
     assert second.status is JobStatus.FAILED
     assert second.error == f"{branch} has commits ticket2pr did not make; not overwriting them"
     assert git(repos_dir / REPO, "rev-parse", branch) == head
+    assert agent.tasks == []  # refused before spending anything
+
+
+async def test_rerun_never_overwrites_an_amended_commit(
+    make_pipeline: MakePipeline, store: JobStore, repos_dir: Path, tmp_path: Path
+) -> None:
+    """An amend keeps ticket2pr as the author; the committer tells it apart."""
+    pipeline = make_pipeline(ScriptedAgent([fix_add]))
+    branch = _branch(await pipeline.run(claim(store, "CALC-1")))
+    clone = tmp_path / "dev"
+    git(tmp_path, "clone", "-q", "--branch", branch, str(repos_dir / REPO), str(clone))
+    (clone / "NOTES.md").write_text("reviewer fixup\n")
+    git(clone, "add", "NOTES.md")
+    git(clone, "-c", "user.email=dev@acme.test", "commit", "-q", "--amend", "--no-edit")
+    git(clone, "push", "-q", "--force", "origin", branch)
+
+    second = await pipeline.run(claim(store, "CALC-1"))
+    assert second.status is JobStatus.FAILED
+    assert "NOTES.md" in git(repos_dir / REPO, "show", "--name-only", "--format=", branch)
+
+
+async def test_push_never_overwrites_a_concurrent_push(
+    make_pipeline: MakePipeline,
+    store: JobStore,
+    repos_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reviewer pushing between ticket2pr's check and its push is not overwritten."""
+    pipeline = make_pipeline(ScriptedAgent([fix_add]))
+    branch = _branch(await pipeline.run(claim(store, "CALC-1")))
+    original = GitRepo.push
+
+    async def reviewer_pushes_first(self: GitRepo, *args: Any, **kwargs: Any) -> None:
+        clone = tmp_path / "dev"
+        git(tmp_path, "clone", "-q", "--branch", branch, str(repos_dir / REPO), str(clone))
+        git(clone, "-c", "user.email=dev@acme.test", "commit", "-q", "--allow-empty", "-m", "x")
+        git(clone, "push", "-q", "origin", branch)
+        await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(GitRepo, "push", reviewer_pushes_first)
+    second = await pipeline.run(claim(store, "CALC-1"))
+    assert second.status is JobStatus.FAILED
+    assert "x" in git(repos_dir / REPO, "log", "-1", "--format=%s", branch)
 
 
 async def test_without_test_command_pr_is_draft(

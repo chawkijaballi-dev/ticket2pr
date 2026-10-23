@@ -43,7 +43,7 @@ async def test_clone_branch_stage_commit_push(repos_dir: Path, tmp_path: Path) -
     sha = await repo.commit("msg", author_name="Bot", author_email="bot@x.test")
     assert len(sha) == 40
     git(origin, "config", "receive.denyCurrentBranch", "ignore")
-    await repo.push(origin.as_uri(), "feature/x")
+    await repo.push(origin.as_uri(), "feature/x", expected_sha="")
     assert git(origin, "log", "-1", "--format=%an", "feature/x").strip() == "Bot"
 
 

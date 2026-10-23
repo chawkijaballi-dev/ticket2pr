@@ -152,22 +152,28 @@ class GitRepo:
         await self._run("commit", "--quiet", "--no-verify", "-m", message, env=identity)
         return await self.head()
 
-    async def remote_head_author(
+    async def remote_head(
         self, url: str, branch: str, *, auth: GitAuth | None = None
-    ) -> str | None:
-        """Author email of ``branch``'s head on the remote, or ``None`` if it does not exist."""
+    ) -> tuple[str, str, str] | None:
+        """``(sha, author email, committer email)`` of ``branch`` on the remote, if it exists."""
         env = auth.env() if auth else None
         if not (await self._run("ls-remote", url, f"refs/heads/{branch}", env=env)).strip():
             return None
         await self._run("fetch", "--quiet", "--depth=1", url, f"refs/heads/{branch}", env=env)
-        return (await self._run("log", "-1", "--format=%ae", "FETCH_HEAD")).strip()
+        sha, author, committer = (
+            await self._run("log", "-1", "--format=%H%n%ae%n%ce", "FETCH_HEAD")
+        ).split()
+        return sha, author, committer
 
-    async def push(self, url: str, branch: str, *, auth: GitAuth | None = None) -> None:
-        # Force: the branch belongs to ticket2pr and a re-run replaces the previous attempt.
+    async def push(
+        self, url: str, branch: str, *, expected_sha: str, auth: GitAuth | None = None
+    ) -> None:
+        """Replace ``branch`` with HEAD, only if the remote still has ``expected_sha`` there
+        (``""``: only if the branch does not exist), so a concurrent push is never lost."""
         await self._run(
             "push",
             "--quiet",
-            "--force",
+            f"--force-with-lease=refs/heads/{branch}:{expected_sha}",
             "--no-verify",
             url,
             f"HEAD:refs/heads/{branch}",

@@ -21,8 +21,9 @@ All notable changes to this project are documented here. The format follows
   (by this version: older kept workspaces have no `.keep` marker and are removed);
   git aborts a clone or push stalled under 1 KB/s for 60 s.
 - A gracefully interrupted job tells the ticket to re-add the label.
-- A re-run refuses to force-push over a PR branch whose head commit has another author email
-  than `T2P_COMMIT_AUTHOR_EMAIL` (a reviewer's fixups are never discarded).
+- A re-run refuses, before the agent runs, a PR branch whose head commit has another author
+  or committer email than `T2P_COMMIT_AUTHOR_EMAIL` (a reviewer's fixups or amends are never
+  discarded); the push itself uses `--force-with-lease`, so a concurrent push is not lost.
 - `T2P_SANDBOX_READONLY_PATHS` expands `~`.
 - Background Bash commands are refused, and Claude Code's background tasks disabled (no
   auto-backgrounding of timed-out commands): they could race the file tools, which run outside
