@@ -15,7 +15,7 @@ import pytest
 from pydantic import SecretStr
 
 from ticket2pr.config import Settings
-from ticket2pr.errors import ConfigurationError
+from ticket2pr.errors import ConfigurationError, PolicyViolationError
 from ticket2pr.redaction import MASK, Redactor
 from ticket2pr.sandbox import (
     TestSandbox,
@@ -351,6 +351,35 @@ def test_subreaper_finds_and_kills_daemonised_descendants(tmp_path: Path) -> Non
         "sys.exit(1)\n"
     )
     assert subprocess.run([sys.executable, "-c", script], check=False).returncode == 0
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux prctl")
+def test_subreaper_kills_a_process_that_keeps_reforking() -> None:
+    """A fork-and-exit chain changes PID constantly: each sweep must catch the new one."""
+    script = (
+        "import os, sys, time\n"
+        "from ticket2pr.sandbox import become_subreaper, kill_descendants, _descendants\n"
+        "become_subreaper()\n"
+        "if os.fork() == 0:\n"
+        "    end = time.monotonic() + 20\n"
+        "    while time.monotonic() < end:\n"
+        "        if os.fork():\n"
+        "            os._exit(0)\n"
+        "    os._exit(0)\n"
+        "time.sleep(0.3)\n"
+        "kill_descendants()\n"
+        "time.sleep(0.3)\n"
+        "live = [p for p, s in _descendants(os.getpid()) if s != 'Z']\n"
+        "sys.exit(1 if live else 0)\n"
+    )
+    assert subprocess.run([sys.executable, "-c", script], check=False, timeout=60).returncode == 0
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux prctl")
+def test_survivors_refuse_publishing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("ticket2pr.sandbox._descendants", lambda _root: [(999_999, "R")])
+    with pytest.raises(PolicyViolationError, match="not publishing"):
+        kill_descendants(deadline_s=0)
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux prctl")

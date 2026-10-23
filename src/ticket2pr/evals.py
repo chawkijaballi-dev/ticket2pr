@@ -15,6 +15,7 @@ the Claude agent measures the resolve rate and the cost per resolved ticket.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -193,4 +194,13 @@ async def _run_task(
 
 
 def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)  # noqa: S607
+    # The developer's own git config (commit signing, global hooks) must not break the suite.
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    identity = ["-c", "user.name=ticket2pr-eval", "-c", "user.email=eval@ticket2pr.invalid"]
+    subprocess.run(
+        ["git", *identity, *args],  # noqa: S607
+        cwd=cwd,
+        env=env,
+        check=True,
+        capture_output=True,
+    )

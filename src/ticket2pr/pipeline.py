@@ -142,7 +142,10 @@ class Pipeline:
         finally:
             # Record the outcome first: nothing below may lose it (cancellation, I/O errors).
             self._store.save(job)
-            await self._reap_untrusted_processes()
+            try:
+                await self._reap_untrusted_processes()
+            except PolicyViolationError:  # the job's outcome stands; nothing is published now
+                logger.exception("job %s: leftover processes survived the final sweep", job.id)
             if job_dir is not None and options.keep_workspace and job_dir.is_dir():
                 (job_dir / KEEP_MARKER).touch()  # so serve's startup cleanup leaves it alone
             elif job_dir is not None:

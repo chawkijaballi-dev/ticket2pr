@@ -23,12 +23,13 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
 from ticket2pr.config import Settings
-from ticket2pr.errors import ConfigurationError
+from ticket2pr.errors import ConfigurationError, PolicyViolationError
 
 logger = logging.getLogger(__name__)
 
@@ -192,8 +193,12 @@ def become_subreaper() -> None:
         logger.warning("prctl(PR_SET_CHILD_SUBREAPER) failed: errno %s", ctypes.get_errno())
 
 
-def kill_descendants(root: int | None = None) -> int:
+def kill_descendants(root: int | None = None, *, deadline_s: float = 10.0) -> int:
     """SIGKILL every descendant of ``root`` (default: this process). Returns how many died.
+
+    Sweeps until a pass finds nothing left, freezing (SIGSTOP) each pass's processes before
+    killing them so they cannot fork in between. Raises ``PolicyViolationError`` if some are
+    still alive at the deadline: the caller must not go on to publish with its token.
 
     Only safe when this process runs no other children it wants to keep, i.e. one job at a
     time; ``Settings`` enforces a single worker when the sandbox is disabled.
@@ -202,16 +207,21 @@ def kill_descendants(root: int | None = None) -> int:
         return 0
     root = os.getpid() if root is None else root
     killed: set[int] = set()
-    for _ in range(10):  # repeat: a dying process may have just forked
-        targets = _descendants(root)
-        if not targets:
-            break
-        for pid, state in targets:
-            if state == "Z":
-                continue  # already dead: only needs reaping below
-            with suppress(ProcessLookupError, PermissionError):
-                os.kill(pid, signal.SIGKILL)
-                killed.add(pid)
+    deadline = time.monotonic() + deadline_s
+    while targets := _descendants(root):
+        live = [pid for pid, state in targets if state != "Z"]  # zombies only need reaping
+        if time.monotonic() > deadline:
+            if live:
+                raise PolicyViolationError(
+                    f"{len(live)} process(es) left by the agent or the tests survived; "
+                    "not publishing"
+                )
+            break  # zombies another descendant still has to reap: harmless
+        for sig in (signal.SIGSTOP, signal.SIGKILL):
+            for pid in live:
+                with suppress(ProcessLookupError, PermissionError):
+                    os.kill(pid, sig)
+        killed.update(live)
         # Reap them: as their (sub)reaper we are the parent, so waitpid works.
         for pid, _state in targets:
             with suppress(ChildProcessError, OSError):

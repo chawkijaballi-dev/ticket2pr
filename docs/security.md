@@ -61,7 +61,8 @@ Residual risks:
 - The git process that pushes holds the GitHub token in its environment, which any process
   of the same user could read from `/proc`. With the sandbox, every untrusted process lived in
   a PID namespace that died with it. Without it, ticket2pr is a child subreaper: before
-  publishing it SIGKILLs every descendant (including double-forked, `setsid` daemons), runs
+  publishing it freezes and SIGKILLs every descendant (including double-forked, `setsid` and
+  re-forking ones), sweeping until none is left and refusing to publish if any survives, runs
   one job at a time, and refuses to push if the publish clone's git config changed.
 - `T2P_TEST_NETWORK=true` gives the tests the host's network namespace: unrestricted egress,
   the host's loopback services and, on cloud VMs, the instance metadata endpoint. Prefer

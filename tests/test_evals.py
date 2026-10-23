@@ -118,3 +118,14 @@ def test_cli_eval_creates_the_report_directory(
     )
     assert result.exit_code == 0, result.output
     assert json.loads(report.read_text())["resolve_rate"] == 1.0
+
+
+async def test_developer_git_config_cannot_break_the_suite(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Commit signing that cannot work non-interactively must not abort `make eval`."""
+    hostile = tmp_path / "hostile-gitconfig"
+    hostile.write_text("[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = false\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(hostile))
+    summary = await run_suite(discover(TASKS, ["slugify"]), settings=settings)
+    assert summary.resolve_rate == 1.0
