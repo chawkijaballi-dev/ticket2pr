@@ -58,7 +58,7 @@ class GitHubClient(ForgeClient):
         qualified = f"{source_repo.split('/', 1)[0]}:{branch}"
         head = fork_head(repo, source_repo, branch)
         existing = await self._request(
-            "GET", f"/repos/{repo}/pulls", params={"head": qualified, "state": "open"}
+            "GET", f"/repos/{repo}/pulls", params={"head": qualified, "base": base, "state": "open"}
         )
         if not (isinstance(existing, list) and existing):
 

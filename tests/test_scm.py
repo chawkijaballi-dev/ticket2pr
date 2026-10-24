@@ -209,6 +209,7 @@ async def test_github_updates_open_pr() -> None:
     )
     assert pr.number == 5
     assert lookup.calls.last.request.url.params["head"] == "acme:b"
+    assert lookup.calls.last.request.url.params["base"] == "main"
     assert json.loads(patch.calls.last.request.content) == {"title": "T", "body": "B"}
 
 

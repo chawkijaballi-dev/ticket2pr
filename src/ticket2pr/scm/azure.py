@@ -19,8 +19,8 @@ from ticket2pr.scm.forge import ForgeClient, path_quote, with_draft_fallback
 from ticket2pr.scm.git import GitAuth
 
 _SERVICES_API = DEFAULT_SCM_API["azure"]
-_API_VERSION = "7.1"
-_MAX_DESCRIPTION = 4_000  # Azure DevOps refuses longer pull-request descriptions
+_API_VERSION = "6.0"  # Server 2020 caps at 6.0, Server 2022 at 7.0; Services takes it
+_MAX_DESCRIPTION = 4_000  # UTF-16 units: Azure DevOps refuses longer descriptions
 _TRUNCATED = "\n\n_(truncated: Azure DevOps limits descriptions to 4,000 characters)_"
 
 
@@ -69,8 +69,10 @@ class AzureDevOpsClient(ForgeClient):
                 "searchCriteria.status": "active",
             },
         )
-        if len(body) > _MAX_DESCRIPTION:
-            body = body[: _MAX_DESCRIPTION - len(_TRUNCATED)] + _TRUNCATED
+        if _utf16_len(body) > _MAX_DESCRIPTION:
+            budget = 2 * (_MAX_DESCRIPTION - _utf16_len(_TRUNCATED))
+            # "ignore": a surrogate pair cut in half is dropped, not mangled.
+            body = body.encode("utf-16-le")[:budget].decode("utf-16-le", "ignore") + _TRUNCATED
         payload: dict[str, Any] = {"title": title, "description": body, "isDraft": draft}
         values = existing.get("value", []) if isinstance(existing, dict) else []
         # ticket2pr never opens fork pull requests here: one from a fork is someone else's.
@@ -100,3 +102,7 @@ class AzureDevOpsClient(ForgeClient):
         return await with_draft_fallback(
             create, payload, draft_key="isDraft", refused=httpx.codes.BAD_REQUEST
         )
+
+
+def _utf16_len(text: str) -> int:
+    return len(text.encode("utf-16-le")) // 2

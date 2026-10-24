@@ -13,7 +13,8 @@ All notable changes to this project are documented here. The format follows
   (`T2P_GITHUB_TOKEN` and `T2P_GITHUB_API_URL` are still read). Each forge's CI files are
   protected paths by default (Woodpecker included); `!123` references, GitLab's extra closing
   keywords and quick actions (`/merge` at the start of a line) are neutralised in agent text.
-  Fork mode is refused with Azure DevOps and Bitbucket Cloud.
+  Fork mode is refused with Azure DevOps and Bitbucket Cloud. Azure DevOps uses API version 6.0, so Server 2020 and
+  2022 work too.
 
 ### Changed
 

@@ -36,7 +36,7 @@ name, `ANTHROPIC_API_KEY`, in the environment or in `.env`.
 | `T2P_TEST_COMMAND` | *(empty)* | Overrides auto-detection when set. |
 | `T2P_TEST_TIMEOUT_S` | `900` | Test run limit, in seconds. |
 | `T2P_MAX_CHANGED_FILES` | `25` | Larger changes fail the job instead of opening a PR. |
-| `T2P_PROTECTED_PATHS` | `[".git/", "**/.env", "**/*.pem", "**/*.key", ".github/", ".gitlab-ci.yml", ".gitlab/", "bitbucket-pipelines.yml", "azure-pipelines.yml", "azure-pipelines.yaml", ".azure-pipelines/", ".gitea/", ".forgejo/", ".woodpecker.yml", ".woodpecker.yaml", ".woodpecker/"]` | Glob patterns never committed; the agent's file tools may not write them (its Bash commands are not checked). |
+| `T2P_PROTECTED_PATHS` | `[".git/", "**/.env", "**/*.pem", "**/*.key", ".github/", ".gitlab-ci.yml", ".gitlab/", "bitbucket-pipelines.yml", "azure-pipelines.yml", "azure-pipelines.yaml", ".azure-pipelines/", ".gitea/", ".forgejo/", ".woodpecker.yml", ".woodpecker.yaml", ".woodpecker/", ".drone.yml"]` | Glob patterns never committed; the agent's file tools may not write them (its Bash commands are not checked). |
 | `T2P_DRAFT_ON_TEST_FAILURE` | `true` | Open PRs as drafts when the tests fail or are missing. |
 | `T2P_DATA_DIR` | `.ticket2pr` | Job database and workspaces live here. |
 | `T2P_API_TOKEN` | *(secret)* | Bearer token for the /jobs API; empty disables it. |

@@ -58,7 +58,7 @@ class GiteaClient(ForgeClient):
                         json={"title": full_title, "body": body},
                     )
                     return _to_pr(data)
-            if len(batch or []) < _PAGE_SIZE:
+            if not batch:  # not "fewer than asked": a server may cap pages lower
                 break
         else:  # a duplicate would be refused anyway, with a less helpful error
             raise SCMError(f"more than {_PAGE_SIZE * _MAX_PAGES} open pull requests on {repo}")

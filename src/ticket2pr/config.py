@@ -169,6 +169,7 @@ class Settings(BaseSettings):
             *(".github/", ".gitlab-ci.yml", ".gitlab/", "bitbucket-pipelines.yml"),
             *("azure-pipelines.yml", "azure-pipelines.yaml", ".azure-pipelines/"),
             *(".gitea/", ".forgejo/", ".woodpecker.yml", ".woodpecker.yaml", ".woodpecker/"),
+            ".drone.yml",
         ],
         description="Glob patterns never committed; the agent's file tools may not write them "
         "(its Bash commands are not checked).",

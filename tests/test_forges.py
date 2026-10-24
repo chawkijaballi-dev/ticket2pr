@@ -240,16 +240,16 @@ async def test_azure_creates_a_draft_and_truncates_long_descriptions() -> None:
         draft=True,
         base="main",
         title="T",
-        body="x" * 10_000,
+        body="😀" * 3_000,  # two UTF-16 units each, as Azure counts
     )
     assert pr.url == "https://dev.azure.com/acme/My%20Project/_git/api/pullrequest/5"
     assert pr.draft is True
     params = lookup.calls.last.request.url.params
     assert params["searchCriteria.sourceRefName"] == "refs/heads/b"
-    assert params["api-version"] == "7.1"
+    assert params["api-version"] == "6.0"
     body = sent(create)
     assert (body["isDraft"], body["targetRefName"]) == (True, "refs/heads/main")
-    assert len(body["description"]) == 4_000
+    assert len(body["description"].encode("utf-16-le")) // 2 <= 4_000
     expected = base64.b64encode(b":pat").decode()
     assert create.calls.last.request.headers["Authorization"] == f"Basic {expected}"
     assert (
