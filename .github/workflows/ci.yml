@@ -23,7 +23,7 @@ jobs:
     env:
       UV_PYTHON: ${{ matrix.python }}  # overrides .python-version for every uv command
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Sandbox dependencies
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q bubblewrap socat
@@ -44,7 +44,7 @@ jobs:
     name: Docker image builds
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
