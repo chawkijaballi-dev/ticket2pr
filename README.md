@@ -204,6 +204,10 @@ The test suite runs fully offline: a scripted agent, a local git "host" and YAML
 exercise the real pipeline end to end, including attacks such as `.git/config` rewrites and
 `pre-push` hooks planted by the agent. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+Optional: `make dev-tools` installs token-saving tools for your own Claude Code (claude-mem,
+caveman, ponytail, rtk, pxpipe, graphify). It skips what is already installed and changes
+only your user configuration; ticket2pr's agent never loads plugins.
+
 ## Limitations
 
 - One repository per Jira project; the agent sees a single repo.

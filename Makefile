@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install fmt lint typecheck test cov eval check docker
+.PHONY: help install dev-tools fmt lint typecheck test cov eval check docker
 
 help: ## Show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -7,6 +7,9 @@ help: ## Show this help
 install: ## Install dependencies and git hooks
 	uv sync
 	uv run pre-commit install
+
+dev-tools: ## Optional: token-saving tools for your own Claude Code (claude-mem, rtk, caveman, ponytail, pxpipe, graphify)
+	bash scripts/dev-tools.sh
 
 fmt: ## Format the code
 	uv run ruff format src tests scripts
