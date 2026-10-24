@@ -11,12 +11,13 @@ from typing import Any
 
 import httpx
 
+from ticket2pr.config import DEFAULT_SCM_API
 from ticket2pr.domain import PullRequest
 from ticket2pr.errors import SCMError
 from ticket2pr.scm.forge import ForgeClient, path_quote, with_draft_fallback
 from ticket2pr.scm.git import GitAuth
 
-_CLOUD_API = "https://api.bitbucket.org/2.0"
+_CLOUD_API = DEFAULT_SCM_API["bitbucket"]
 _SERVER_API_SUFFIX = "/rest/api/1.0"
 
 

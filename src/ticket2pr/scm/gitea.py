@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from ticket2pr.domain import PullRequest
+from ticket2pr.errors import SCMError
 from ticket2pr.scm.forge import ForgeClient, fork_head, path_quote
 
 _DRAFT_PREFIX = "WIP: "
@@ -59,6 +60,8 @@ class GiteaClient(ForgeClient):
                     return _to_pr(data)
             if len(batch or []) < _PAGE_SIZE:
                 break
+        else:  # a duplicate would be refused anyway, with a less helpful error
+            raise SCMError(f"more than {_PAGE_SIZE * _MAX_PAGES} open pull requests on {repo}")
         payload = {
             "head": fork_head(repo, source_repo, branch),
             "base": base,

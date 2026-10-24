@@ -19,6 +19,7 @@ from rich.table import Table
 from ticket2pr import __version__
 from ticket2pr.config import (
     CLAUDE_CREDENTIAL_ENV_VARS,
+    FORKLESS_PROVIDERS,
     Settings,
     enabled_cloud_providers,
     repo_error,
@@ -197,7 +198,7 @@ def doctor() -> None:
         sandbox_check: not missing,
     }
     recommended = {}
-    if settings.scm_provider not in ("azure", "bitbucket"):  # no fork mode there
+    if settings.scm_provider not in FORKLESS_PROVIDERS:
         recommended[
             "pushes to a bot-owned fork (T2P_FORK_OWNER), so CI secrets stay out of reach"
         ] = bool(settings.fork_owner)

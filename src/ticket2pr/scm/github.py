@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+from ticket2pr.config import DEFAULT_SCM_API
 from ticket2pr.domain import PullRequest
 from ticket2pr.errors import SCMError
 from ticket2pr.scm.forge import ForgeClient, fork_head, with_draft_fallback
@@ -14,7 +15,7 @@ from ticket2pr.scm.forge import ForgeClient, fork_head, with_draft_fallback
 logger = logging.getLogger(__name__)
 
 _API_VERSION = "2022-11-28"
-_PUBLIC_API = "https://api.github.com"
+_PUBLIC_API = DEFAULT_SCM_API["github"]
 
 
 class GitHubClient(ForgeClient):

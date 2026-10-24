@@ -67,10 +67,14 @@ the failing output (tail) is passed back as feedback.
 
 - **Another tracker** (Linear, GitHub Issues): implement `Tracker` (`get_ticket`, `comment`,
   `aclose`) and wire it in `runtime.build_runtime`.
-- **Another forge**: subclass `scm.forge.ForgeClient` (an authenticated JSON API) and
-  implement `clone_url`, `open_or_update_pr` and, if the token is not a Basic password,
-  `git_auth`; add it to `runtime._FORGES` and `config.ScmProvider`. In fork mode the pipeline
-  pushes to `<fork_owner>/<name>` and passes it as `source_repo`.
+- **Another forge**: subclass `scm.forge.ForgeClient` (an authenticated JSON API) with
+  `_auth_headers`, `clone_url`, `open_or_update_pr` and, if the token is not a Basic
+  password, `git_auth`. Register it in `runtime._FORGES` and `config.ScmProvider`, then in
+  `config`: its cloud URL in `DEFAULT_SCM_API`, its repository shape in `repo_error`,
+  `FORKLESS_PROVIDERS` if it has no fork pull requests, its CI files in the default
+  `protected_paths`, and the setting descriptions (regenerate `docs/configuration.md` with
+  `scripts/gen_config_docs.py`). In fork mode the pipeline pushes to `<fork_owner>/<name>`
+  and passes it as `source_repo`.
 - **Another agent**: implement `CodingAgent.run(task) -> AgentResult`. The pipeline's
   guardrails (git hygiene, protected paths, tests, budget accounting) apply unchanged.
 - **A distributed queue**: replace `JobQueue`'s `submit`/`enqueue`/`start`/`stop` (restart

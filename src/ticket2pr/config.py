@@ -24,12 +24,17 @@ _PROJECT_RE = re.compile(r"^[A-Z][A-Z0-9_]+$")
 
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 ScmProvider = Literal["github", "gitlab", "bitbucket", "bitbucket-server", "azure", "gitea"]
-_DEFAULT_SCM_API = {
+DEFAULT_SCM_API = {  # each forge's cloud; self-hosted-only forges have none
     "github": "https://api.github.com",
     "gitlab": "https://gitlab.com/api/v4",
     "bitbucket": "https://api.bitbucket.org/2.0",
     "azure": "https://dev.azure.com",
 }
+
+
+# Azure DevOps: no fork pull requests over its API. Bitbucket Cloud: access tokens are scoped to
+# one repository or workspace, so none can push to a fork and open the pull request.
+FORKLESS_PROVIDERS = ("azure", "bitbucket")
 
 
 def repo_error(provider: ScmProvider, repo: str) -> str | None:
@@ -89,7 +94,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("T2P_SCM_API_URL", "T2P_GITHUB_API_URL"),
         description="API base URL, for self-hosted forges: https://<host>/api/v3 (GitHub "
         "Enterprise), https://<host>/api/v4 (GitLab), https://<host>/rest/api/1.0 (Bitbucket "
-        "Data Center; required), https://<host> (Azure DevOps Server; the collection goes in "
+        "Data Center; required), https://<host>[/tfs] (Azure DevOps Server; the collection goes in "
         "T2P_REPOS), https://<host>/api/v1 (Gitea, Forgejo; required). Empty: the provider's "
         "cloud.",
     )
@@ -201,9 +206,7 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"invalid {self.scm_provider} repository for {project}: {repo!r} ({error})"
                 )
-        # Azure DevOps: no fork pull requests over this API. Bitbucket Cloud: access tokens are
-        # scoped to one repository or workspace, so none can push to a fork and open the PR.
-        if self.fork_owner and self.scm_provider in ("azure", "bitbucket"):
+        if self.fork_owner and self.scm_provider in FORKLESS_PROVIDERS:
             raise ValueError(f"T2P_FORK_OWNER is not supported with {self.scm_provider}")
         return self
 
@@ -241,7 +244,7 @@ class Settings(BaseSettings):
     @property
     def scm_api(self) -> str:
         """The forge's API base URL: the configured one, or the provider's cloud."""
-        return self.scm_api_url or _DEFAULT_SCM_API.get(self.scm_provider, "")
+        return self.scm_api_url or DEFAULT_SCM_API.get(self.scm_provider, "")
 
     @property
     def workspaces_dir(self) -> Path:

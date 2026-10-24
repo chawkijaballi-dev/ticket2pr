@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from ticket2pr.config import DEFAULT_SCM_API
 from ticket2pr.domain import PullRequest
 from ticket2pr.scm.forge import ForgeClient, path_quote
 from ticket2pr.scm.git import GitAuth
 
-_PUBLIC_API = "https://gitlab.com/api/v4"
+_PUBLIC_API = DEFAULT_SCM_API["gitlab"]
 _DRAFT_PREFIX = "Draft: "
 
 

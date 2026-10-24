@@ -170,11 +170,12 @@ Set `T2P_SCM_PROVIDER`, `T2P_SCM_TOKEN` and, for a self-hosted forge, `T2P_SCM_A
 | `gitlab` | GitLab.com, self-managed | `group/subgroup/name` | empty, or `https://<host>/api/v4` | `Draft:` title | yes |
 | `bitbucket` | Bitbucket Cloud | `workspace/name` | empty | native | no |
 | `bitbucket-server` | Bitbucket Data Center | `PROJECT/name` | `https://<host>/rest/api/1.0` | native (8.18+) | yes (`~user` forks) |
-| `azure` | Azure DevOps Services, Server | `organization/project/repository` (`collection/project/repository` on a Server) | empty, or `https://<host>` | native | no |
+| `azure` | Azure DevOps Services, Server | `organization/project/repository` (`collection/project/repository` on a Server) | empty, or `https://<host>` (`https://<host>/tfs`) | native | no |
 | `gitea` | Gitea, Forgejo, Codeberg | `owner/name` | `https://<host>/api/v1` | `WIP:` title | yes |
 
 When a forge refuses drafts (plan, old server), ticket2pr opens a regular pull request flagged
-as failing instead.
+as failing instead. Azure DevOps limits descriptions to 4,000 characters: longer ones are cut
+at the end, where the agent's summary is.
 
 ## Evaluation
 

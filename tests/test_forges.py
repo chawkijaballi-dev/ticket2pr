@@ -316,6 +316,15 @@ async def test_gitea_pages_through_open_pulls_and_updates_the_match() -> None:
 
 
 @respx.mock
+async def test_gitea_gives_up_after_the_page_cap() -> None:
+    respx.get(PULLS).respond(json=[gitea_pr(n, "other") for n in range(50)])
+    with pytest.raises(SCMError, match="more than 1000 open pull requests"):
+        await GiteaClient(token="t", api_url=GITEA).open_or_update_pr(
+            "acme/api", source_repo="acme/api", branch="b", draft=False, **PR
+        )
+
+
+@respx.mock
 async def test_gitea_creates_from_a_fork() -> None:
     respx.get(PULLS).respond(json=[])
     create = respx.post(PULLS).respond(201, json=gitea_pr(3, "b", owner="bot"))
