@@ -680,3 +680,7 @@ uv run ticket2pr doctor
 
 Pour garder le dossier de travail d'un job et regarder ce que l'agent a fait :
 `uv run ticket2pr run SHOP-42 --keep-workspace`.
+
+---
+
+© 2026 Chawki JABALLI. Distribué sous [licence MIT](LICENSE).
