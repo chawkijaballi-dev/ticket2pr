@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -102,7 +103,9 @@ def test_cli_eval_rejects_bad_input(tmp_path: Path) -> None:
     assert missing.exit_code == 2  # typer: "Directory ... does not exist"
     bad_agent = runner.invoke(cli.app, ["eval", "--tasks-dir", str(TASKS), "--agent", "gpt"])
     assert bad_agent.exit_code == 2
-    assert "--agent must be" in bad_agent.output
+    # On CI, typer's rich error panel is coloured and wrapped: compare the bare text.
+    plain = re.sub(r"\x1b\[[0-9;]*m|[│╭╮╰╯─\s]", "", bad_agent.output)
+    assert "--agentmustbe" in plain
     result = runner.invoke(cli.app, ["eval", "--tasks-dir", str(TASKS), "--task", "nope"])
     assert result.exit_code == 2
 
