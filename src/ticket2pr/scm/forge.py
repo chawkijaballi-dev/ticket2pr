@@ -22,24 +22,29 @@ logger = logging.getLogger(__name__)
 
 class ForgeClient:
     name = "forge"
+    default_api_url = ""  # the forge's cloud; empty for self-hosted-only forges
 
     def __init__(
         self,
         *,
         token: str,
-        api_url: str,
-        headers: dict[str, str],
+        api_url: str = "",
         client: httpx.AsyncClient | None = None,
         timeout_s: float = 30.0,
     ) -> None:
+        api_url = api_url or self.default_api_url
         if not token:
             raise ConfigurationError(f"{self.name} needs T2P_SCM_TOKEN")
         if not api_url:
             raise ConfigurationError(f"{self.name} needs T2P_SCM_API_URL")
         self._api_url = api_url.rstrip("/")
         self._token = token
-        self._headers = headers
+        self._headers = self._auth_headers(token)
         self._client = client or httpx.AsyncClient(timeout=timeout_s)
+
+    @staticmethod
+    def _auth_headers(token: str) -> dict[str, str]:
+        raise NotImplementedError
 
     def git_auth(self) -> GitAuth | None:
         return GitAuth(token=self._token)
@@ -96,6 +101,11 @@ async def with_draft_fallback(
             raise
         logger.warning("draft state refused, sending without it: %s", exc)
         return await send({key: value for key, value in payload.items() if key != draft_key})
+
+
+def fork_head(repo: str, source_repo: str, branch: str) -> str:
+    """A pull request's head as GitHub and Gitea name it: ``branch``, or ``owner:branch``."""
+    return branch if source_repo == repo else f"{source_repo.split('/', 1)[0]}:{branch}"
 
 
 def path_quote(*segments: str) -> str:

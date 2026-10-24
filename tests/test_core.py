@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import threading
@@ -101,6 +102,7 @@ def test_settings_reject_bad_repo_mapping(repos: dict[str, str]) -> None:
         ("bitbucket-server", "PROJ/api", True),
         ("azure", "acme/My Project/api", True),
         ("azure", "acme/api", False),
+        ("azure", "acme/My Project/My Project", True),
         ("gitea", "acme/api", True),
     ],
 )
@@ -121,8 +123,9 @@ def test_scm_settings_defaults_and_aliases(monkeypatch: pytest.MonkeyPatch) -> N
     settings = Settings(_env_file=None)
     assert settings.scm_token.get_secret_value() == "legacy-name"
     assert settings.scm_api == "https://ghe.test/api/v3"
-    with pytest.raises(ValidationError, match="Azure DevOps"):
-        Settings(scm_provider="azure", fork_owner="bot", _env_file=None)
+    for provider in ("azure", "bitbucket"):
+        with pytest.raises(ValidationError, match="not supported"):
+            Settings(scm_provider=provider, fork_owner="bot", _env_file=None)
 
 
 def test_derived_paths_follow_copies() -> None:
@@ -385,6 +388,25 @@ def test_commit_message_and_title() -> None:
     assert "F\u200bixes https://github.com/a/b/issues/7" in url
     assert "G\u200bH-7" in render.pr_title(Ticket(key="PROJ-1", title="See GH-7"))
     assert "!\u200b12" in render.pr_title(Ticket(key="PROJ-1", title="See !12"))
+    gitlab = render.pr_title(
+        Ticket(key="PROJ-1", title="Implements https://gl.test/g/p/-/issues/7")
+    )
+    assert gitlab.startswith("[PROJ-1] I\u200bmplements")
+
+
+def test_pr_body_neutralises_gitlab_quick_actions() -> None:
+    summary = "Done.\n/merge\n  /target_branch staging\nnot /a command"
+    body = render.pr_body(
+        ticket=TICKET,
+        agent=AgentResult(outcome=AgentOutcome.COMPLETED, summary=summary),
+        usage=USAGE,
+        changes=ChangeSet(files=("a.py",)),
+        tests=TestReport(command=None, passed=False),
+        model="m",
+    )
+    assert not re.search(r"(?m)^\s*/", body)
+    assert "\\/merge" in body
+    assert "not /a command" in body
 
 
 def test_pr_body_contents() -> None:

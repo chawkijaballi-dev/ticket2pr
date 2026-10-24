@@ -63,7 +63,12 @@ async def test_gitlab_opens_a_draft_merge_request() -> None:
 
 @respx.mock
 async def test_gitlab_updates_the_open_merge_request() -> None:
-    respx.get(MRS).respond(json=[{"iid": 9, "source_project_id": 1}])
+    respx.get(MRS).respond(
+        json=[
+            {"iid": 8, "source_project_id": 66, "target_project_id": 1},  # someone's fork
+            {"iid": 9, "source_project_id": 1, "target_project_id": 1},
+        ]
+    )
     update = respx.put(f"{MRS}/9").respond(
         json={"iid": 9, "web_url": "https://gitlab.com/x/-/merge_requests/9", "title": "T"}
     )
@@ -87,6 +92,19 @@ async def test_gitlab_fork_merge_request_is_created_on_the_fork() -> None:
     )
     assert pr.number == 4
     assert sent(create)["target_project_id"] == 11
+
+
+@respx.mock
+async def test_gitlab_never_takes_over_a_fork_merge_request() -> None:
+    respx.get(MRS).respond(json=[{"iid": 8, "source_project_id": 66, "target_project_id": 1}])
+    create = respx.post(MRS).respond(
+        201, json={"iid": 10, "web_url": "https://gitlab.com/x/-/merge_requests/10"}
+    )
+    pr = await GitLabClient(token="t").open_or_update_pr(
+        "acme/sub/api", source_repo="acme/sub/api", branch="b", draft=False, **PR
+    )
+    assert pr.number == 10
+    assert create.called
 
 
 def test_gitlab_self_managed_clone_url() -> None:
@@ -171,6 +189,16 @@ async def test_bitbucket_server_updates_with_the_version() -> None:
 
 
 @respx.mock
+async def test_bitbucket_server_matches_keys_and_slugs_whatever_their_case() -> None:
+    respx.get(f"{BBS}/projects/proj/repos/api/pull-requests").respond(json={"values": [bbs_pr(4)]})
+    update = respx.put(f"{BBS}/projects/proj/repos/api/pull-requests/4").respond(json=bbs_pr(4))
+    await BitbucketServerClient(token="t", api_url=BBS).open_or_update_pr(
+        "proj/api", source_repo="proj/api", branch="b", draft=False, **PR
+    )
+    assert update.called
+
+
+@respx.mock
 async def test_bitbucket_server_creates_with_refs() -> None:
     respx.get(f"{BBS}/projects/PROJ/repos/api/pull-requests").respond(json={"values": []})
     create = respx.post(f"{BBS}/projects/PROJ/repos/api/pull-requests").respond(201, json=bbs_pr(2))
@@ -233,13 +261,24 @@ async def test_azure_creates_a_draft_and_truncates_long_descriptions() -> None:
 
 @respx.mock
 async def test_azure_updates_the_active_pull_request() -> None:
-    respx.get(AZ).respond(json={"value": [{"pullRequestId": 7}]})
+    respx.get(AZ).respond(
+        json={
+            "value": [{"pullRequestId": 6, "forkSource": {"repository": {}}}, {"pullRequestId": 7}]
+        }
+    )
     update = respx.patch(f"{AZ}/7").respond(json={"pullRequestId": 7, "isDraft": False})
     pr = await AzureDevOpsClient(token="t").open_or_update_pr(
         "acme/My Project/api", source_repo="acme/My Project/api", branch="b", draft=False, **PR
     )
     assert pr.number == 7
     assert sent(update) == {"title": "T", "description": "B", "isDraft": False}
+
+
+def test_azure_devops_server_urls() -> None:
+    client = AzureDevOpsClient(token="t", api_url="https://tfs.acme.test/tfs")
+    assert client.clone_url("DefaultCollection/My Project/My Project") == (
+        "https://tfs.acme.test/tfs/DefaultCollection/My%20Project/_git/My%20Project"
+    )
 
 
 # ── Gitea / Forgejo ─────────────────────────────────────────────────────

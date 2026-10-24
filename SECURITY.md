@@ -1,6 +1,6 @@
 # Security policy
 
-ticket2pr runs an AI agent on source code and handles Jira and GitHub credentials, so
+ticket2pr runs an AI agent on source code and handles Jira and forge (GitHub, GitLab...) credentials, so
 security reports are taken seriously.
 
 ## Supported versions

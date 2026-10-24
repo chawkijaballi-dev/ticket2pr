@@ -20,11 +20,11 @@ class TicketNotFoundError(TrackerError):
 
 
 class SCMError(Ticket2PRError):
-    """A git or GitHub operation failed."""
+    """A git or forge (pull-request API) operation failed."""
 
     def __init__(self, message: str, *, status_code: int | None = None) -> None:
         super().__init__(message)
-        self.status_code = status_code  # HTTP status, for GitHub API errors
+        self.status_code = status_code  # HTTP status, for forge API errors
 
 
 class StaleBaseError(SCMError):

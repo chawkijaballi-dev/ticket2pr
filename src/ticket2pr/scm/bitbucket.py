@@ -23,21 +23,11 @@ _SERVER_API_SUFFIX = "/rest/api/1.0"
 class BitbucketCloudClient(ForgeClient):
     name = "Bitbucket"
 
-    def __init__(
-        self,
-        *,
-        token: str,
-        api_url: str = _CLOUD_API,
-        client: httpx.AsyncClient | None = None,
-        timeout_s: float = 30.0,
-    ) -> None:
-        super().__init__(
-            token=token,
-            api_url=api_url,
-            headers={"Authorization": f"Bearer {token}"},
-            client=client,
-            timeout_s=timeout_s,
-        )
+    default_api_url = _CLOUD_API
+
+    @staticmethod
+    def _auth_headers(token: str) -> dict[str, str]:
+        return {"Authorization": f"Bearer {token}"}
 
     def git_auth(self) -> GitAuth | None:
         return GitAuth(token=self._token, username="x-token-auth")
@@ -91,21 +81,9 @@ class BitbucketCloudClient(ForgeClient):
 class BitbucketServerClient(ForgeClient):
     name = "Bitbucket Data Center"
 
-    def __init__(
-        self,
-        *,
-        token: str,
-        api_url: str,
-        client: httpx.AsyncClient | None = None,
-        timeout_s: float = 30.0,
-    ) -> None:
-        super().__init__(
-            token=token,
-            api_url=api_url,
-            headers={"Authorization": f"Bearer {token}"},
-            client=client,
-            timeout_s=timeout_s,
-        )
+    @staticmethod
+    def _auth_headers(token: str) -> dict[str, str]:
+        return {"Authorization": f"Bearer {token}"}
 
     def git_auth(self) -> GitAuth | None:
         return GitAuth(token=self._token, scheme="Bearer")  # HTTP access tokens, as for the API
@@ -140,7 +118,7 @@ class BitbucketServerClient(ForgeClient):
                 pr
                 for pr in values
                 if pr.get("toRef", {}).get("id") == f"refs/heads/{base}"
-                and _repo_of(pr.get("toRef", {})) == repo
+                and _repo_of(pr.get("toRef", {})).casefold() == repo.casefold()
             ),
             None,
         )

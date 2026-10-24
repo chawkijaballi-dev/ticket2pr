@@ -8,7 +8,7 @@ from ticket2pr.domain import AgentResult, ChangeSet, PullRequest, TestReport, Ti
 
 _MAX_SUMMARY_CHARS = 6_000
 _MAX_TEST_TAIL_CHARS = 3_000
-_MAX_GUARDRAIL_LINES = 20  # GitHub refuses bodies over 65,536 characters
+_MAX_GUARDRAIL_LINES = 20  # GitHub refuses bodies over 65,536 characters, others less
 _MAX_GUARDRAIL_CHARS = 300
 _HTML_START = re.compile(r"<(?=[A-Za-z/!?])")
 _FENCE = re.compile(r"`{3,}|~{3,}")
@@ -19,9 +19,15 @@ _REFERENCE = re.compile(r"([@#!])(?=[\w/-])")
 # GitHub also links GH-7: a zero-width space after the G.
 _GH_REFERENCE = re.compile(r"\b(G)(?=H-\d)", re.IGNORECASE)
 # GitHub also honours "Fixes https://github.com/o/r/issues/7": break the keyword itself.
+# GitLab adds closing, fixing, resolving and implement(s/ed/ing).
 _CLOSING_KEYWORD = re.compile(
-    r"\b(?=(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+https?://)(\w)", re.IGNORECASE
+    r"\b(?=(?:clos(?:e[sd]?|ing)|fix(?:e[sd]|ing)?|resolv(?:e[sd]?|ing)|implement(?:s|ed|ing)?)"
+    r":?\s+https?://)(\w)",
+    re.IGNORECASE,
 )
+# GitLab runs quick actions (/merge, /ready, /approve...) found at the start of a line of a
+# merge request description, with the token's rights.
+_QUICK_ACTION = re.compile(r"^(\s*)/", re.MULTILINE)
 
 
 def commit_message(ticket: Ticket) -> str:
@@ -137,16 +143,17 @@ def _inert(markdown: str) -> str:
     """Untrusted Markdown (agent text, ticket title) without images, raw HTML, fenced blocks
     or ``[]`` links.
 
-    The ticket can steer the agent, and GitHub fetches every image of a PR body for each
+    The ticket can steer the agent, and forges fetch every image of a PR body for each
     viewer: an image URL could carry repository data out. Escaping every ``[`` (after the
     backslashes, so ``\\[`` cannot undo it) also kills reference definitions, which apply to
     the whole document. Bare URLs still autolink, but only a click follows them. shortcut:
     the escapes also show inside code blocks; parse the Markdown if that ever matters.
     """
     escaped = markdown.replace("\\", "\\\\").replace("[", "\\[")
-    # No fenced blocks either: GitHub renders some (mermaid, geojson...) with remote content.
+    # No fenced blocks either: forges render some (mermaid, geojson...) with remote content.
     # (Every character escaped: one escape would leave a shorter, still valid fence.)
     escaped = _FENCE.sub(lambda run: "".join(f"\\{char}" for char in run.group()), escaped)
+    escaped = _QUICK_ACTION.sub("\\1\\\\/", escaped)
     return _HTML_START.sub("&lt;", _no_references(escaped))
 
 

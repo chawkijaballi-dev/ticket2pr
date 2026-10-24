@@ -450,7 +450,7 @@ def _public_error(exc: Exception, detail: str) -> str:
     if isinstance(exc, AgentError | PolicyViolationError | ConfigurationError | StaleBaseError):
         return detail
     if isinstance(exc, SCMError):
-        return "a git or GitHub operation failed (details in the ticket2pr job record)"
+        return "a git or forge operation failed (details in the ticket2pr job record)"
     if isinstance(exc, TrackerError):
         return "the ticket could not be read or updated (details in the ticket2pr job record)"
     return "internal error (details in the ticket2pr job record)"

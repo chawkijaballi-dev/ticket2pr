@@ -34,9 +34,9 @@ layers above it can fail.
 | **Fork mode** (`T2P_FORK_OWNER`): branches go to a fork owned by the bot and PRs are cross-repository, so the target repository's CI treats them as fork PRs (no secrets, read-only token, approval can be required) | `pipeline.py` | T8 |
 | The agent's workspace is a plain tree, not a repository: its `.git` is removed before the agent starts (and again before every attempt and test run), and the test sandbox mounts an unusable `.git`, because Claude Code itself runs git there, unsandboxed, and would execute a planted filter or fsmonitor. Its git also gets `safe.bareRepository=explicit` and a ceiling directory, so a workspace root dressed up as a repository (`HEAD`, `objects/`, `refs/`, `config`) or an enclosing checkout is never used; `git init` is blocked. No ticket2pr git command runs in it either. The tree (never any `.git`) is copied into a fresh **publish clone**, where ticket2pr commits and pushes; its config is checked before any authenticated network call, and the branch is never replaced when its head was authored or committed by someone else (checked before the agent runs, then enforced with `--force-with-lease`) | `pipeline.py`, `sandbox.py`, `verify.py`, `agent/claude.py`, `agent/guard.py`, `scm/git.py` | T4 |
 | Every ticket2pr git command ignores system and global config, disables hooks, fsmonitor, external attribute files and the per-user excludes file, allows only https/file transports, and gets credentials through `GIT_CONFIG_*` environment variables (never argv or a config file) | `scm/git.py` | T2, T4 |
-| Protected paths unstaged before commit and listed on the PR; paths parsed NUL-separated so unusual names cannot slip through | `pipeline.py`, `scm/git.py` | T5 |
+| Protected paths unstaged before commit and listed on the PR; paths parsed NUL-separated so unusual names cannot slip through. The defaults cover each forge's usual CI files; pipelines elsewhere (Azure YAML at any path, GitLab `include: local:` files) must be added to `T2P_PROTECTED_PATHS` | `pipeline.py`, `scm/git.py` | T5 |
 | A staged change containing any configured secret (ticket2pr's settings, every variable the agent can see whose name has the word KEY, TOKEN, SECRET, PASSWORD, PASSPHRASE or HEADERS, proxy URL credentials) is refused; secrets are masked in PR bodies, ticket comments, job errors and the feedback given to the agent | `redaction.py`, `pipeline.py` | T2, T5 |
-| Agent-written text and the ticket title are inert in the PR body (no images, raw HTML, fenced blocks, `[]` links, @mentions, #/!references or closing keywords: forges fetch images, and renders some fenced blocks with remote content, for every viewer; bare URLs still autolink and need a click), and the agent's summary comes last so it cannot hide or fake ticket2pr's sections; ticket comments carry no agent text or git/OS error output, only outcomes ticket2pr words itself and the cost (tokens and turns stay in the PR: exact numbers the agent could steer) | `render.py`, `pipeline.py` | T1, T5 |
+| Agent-written text and the ticket title are inert in the PR body (no images, raw HTML, fenced blocks, `[]` links, @mentions, #/!references, closing keywords or GitLab quick actions (`/merge` at the start of a line): forges fetch images, and renders some fenced blocks with remote content, for every viewer; bare URLs still autolink and need a click), and the agent's summary comes last so it cannot hide or fake ticket2pr's sections; ticket comments carry no agent text or git/OS error output, only outcomes ticket2pr words itself and the cost (tokens and turns stay in the PR: exact numbers the agent could steer) | `render.py`, `pipeline.py` | T1, T5 |
 | Each job's Claude Code gets its own temp directory (`CLAUDE_CODE_TMPDIR`, deleted with the job); the shared `/tmp/claude` and `/tmp/claude-<uid>` (other Claude Code sessions' task outputs) are denied to its Bash sandbox, as are `/run` and `/var/run` (host IPC sockets: the D-Bus user bus, systemd-resolved, docker.sock; `systemd-run --user` would start a process outside the sandbox) | `agent/claude.py` | T2 |
 | Per-ticket dollar budget shared across retries (a timed-out or interrupted run counts as its whole budget), turn cap, wall-clock timeout, changed-files cap | `config.py`, `agent/claude.py`, `pipeline.py` | T6 |
 | HMAC-SHA256 webhook signature (constant-time compare), body size limit enforced while reading, label-added trigger, replays refused (a triggering body already received, remembered per process; events older than an hour), idempotent claims | `server.py`, `store.py` | T7, T6 |
@@ -83,12 +83,15 @@ Residual risks:
     must span both owners: a classic token (`public_repo` or `repo`) or a GitHub App installed
     on both.
   - GitLab: a project or group access token (role Developer) with the `api` scope; GitLab has
-    no narrower scope that opens merge requests.
+    no narrower scope that opens merge requests. Fork mode needs the bot user's personal
+    access token (`api`), which reaches both its fork and the target project.
   - Bitbucket Cloud: a repository or workspace access token with *Repositories: Write* and
     *Pull requests: Write*.
-  - Bitbucket Data Center: an HTTP access token with *Repository write*.
+  - Bitbucket Data Center: an HTTP access token with *Repository write*; fork mode needs a
+    personal one of the bot user (it reaches the bot's `~user` fork and the target).
   - Azure DevOps: a personal access token with *Code (Read & write)* only.
-  - Gitea, Forgejo: an access token with the `write:repository` scope.
+  - Gitea, Forgejo: an access token of the bot user with the `write:repository` scope (it
+    reaches its fork in fork mode).
 
   Protect the base branch so ticket2pr can only open pull requests, never merge. Jira: a bot
   account that can read the projects and comment. Anthropic: a dedicated key in a workspace

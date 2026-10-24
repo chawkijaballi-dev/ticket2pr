@@ -1,7 +1,7 @@
 [project]
 name = "ticket2pr"
 version = "0.1.0"
-description = "Turn Jira tickets into review-ready GitHub pull requests with a budget-capped, sandboxed Claude agent."
+description = "Turn Jira tickets into review-ready pull requests (GitHub, GitLab, Bitbucket, Azure DevOps, Gitea) with a budget-capped, sandboxed Claude agent."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -64,7 +64,7 @@ ignore = [
     "PLR0913", # explicit keyword-only constructors are clearer than config bags
     "TRY003",  # contextual exception messages are intentional
     "S603",    # subprocess calls never use a shell and take argv lists
-    "ANN401",  # JSON payloads from Jira/GitHub are genuinely untyped at the boundary
+    "ANN401",  # JSON payloads from Jira and the forges are genuinely untyped at the boundary
 ]
 
 [tool.ruff.lint.per-file-ignores]

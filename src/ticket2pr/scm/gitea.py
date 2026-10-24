@@ -8,10 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
-
 from ticket2pr.domain import PullRequest
-from ticket2pr.scm.forge import ForgeClient, path_quote
+from ticket2pr.scm.forge import ForgeClient, fork_head, path_quote
 
 _DRAFT_PREFIX = "WIP: "
 _PAGE_SIZE = 50
@@ -21,21 +19,9 @@ _MAX_PAGES = 20  # 1,000 open pull requests
 class GiteaClient(ForgeClient):
     name = "Gitea"
 
-    def __init__(
-        self,
-        *,
-        token: str,
-        api_url: str,
-        client: httpx.AsyncClient | None = None,
-        timeout_s: float = 30.0,
-    ) -> None:
-        super().__init__(
-            token=token,
-            api_url=api_url,
-            headers={"Authorization": f"token {token}"},
-            client=client,
-            timeout_s=timeout_s,
-        )
+    @staticmethod
+    def _auth_headers(token: str) -> dict[str, str]:
+        return {"Authorization": f"token {token}"}
 
     def clone_url(self, repo: str) -> str:
         return f"{self._api_url.removesuffix('/api/v1')}/{repo}.git"
@@ -62,7 +48,7 @@ class GiteaClient(ForgeClient):
                 head_repo = (head.get("repo") or {}).get("full_name")
                 if (
                     head.get("ref") == branch
-                    and head_repo == source_repo
+                    and (head_repo or "").casefold() == source_repo.casefold()
                     and target.get("ref") == base
                 ):
                     data = await self._request(
@@ -73,8 +59,12 @@ class GiteaClient(ForgeClient):
                     return _to_pr(data)
             if len(batch or []) < _PAGE_SIZE:
                 break
-        head = branch if source_repo == repo else f"{source_repo.split('/', 1)[0]}:{branch}"
-        payload = {"head": head, "base": base, "title": full_title, "body": body}
+        payload = {
+            "head": fork_head(repo, source_repo, branch),
+            "base": base,
+            "title": full_title,
+            "body": body,
+        }
         return _to_pr(await self._request("POST", pulls, json=payload))
 
 

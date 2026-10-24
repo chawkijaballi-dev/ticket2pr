@@ -1,7 +1,8 @@
 """Azure DevOps Services (dev.azure.com) and Azure DevOps Server: pull requests.
 
-Repositories are ``<organization>/<project>/<repository>`` (the collection takes the
-organization's place on a Server). A personal access token authenticates both the API and git.
+Repositories are ``<organization>/<project>/<repository>``. On a Server, the API URL is the
+server (``https://<host>``, or ``https://<host>/tfs``) and the collection takes the
+organization's place. A personal access token authenticates both the API and git.
 Fork pull requests are not supported (ticket2pr refuses ``T2P_FORK_OWNER`` with this forge).
 """
 
@@ -25,22 +26,12 @@ _TRUNCATED = "\n\n_(truncated: Azure DevOps limits descriptions to 4,000 charact
 class AzureDevOpsClient(ForgeClient):
     name = "Azure DevOps"
 
-    def __init__(
-        self,
-        *,
-        token: str,
-        api_url: str = _SERVICES_API,
-        client: httpx.AsyncClient | None = None,
-        timeout_s: float = 30.0,
-    ) -> None:
+    default_api_url = _SERVICES_API
+
+    @staticmethod
+    def _auth_headers(token: str) -> dict[str, str]:
         basic = base64.b64encode(f":{token}".encode()).decode()
-        super().__init__(
-            token=token,
-            api_url=api_url,
-            headers={"Authorization": f"Basic {basic}"},
-            client=client,
-            timeout_s=timeout_s,
-        )
+        return {"Authorization": f"Basic {basic}"}
 
     def git_auth(self) -> GitAuth | None:
         return GitAuth(token=self._token, username="")  # a PAT takes any user name
@@ -61,7 +52,7 @@ class AzureDevOpsClient(ForgeClient):
         draft: bool,
     ) -> PullRequest:
         organization, project, name = repo.split("/")
-        web = f"{self._api_url}/{path_quote(organization, project)}/_git/{path_quote(name)}"
+        web = self.clone_url(repo)
         prs = (
             f"/{path_quote(organization, project)}/_apis/git/repositories/"
             f"{path_quote(name)}/pullrequests"
@@ -81,6 +72,8 @@ class AzureDevOpsClient(ForgeClient):
             body = body[: _MAX_DESCRIPTION - len(_TRUNCATED)] + _TRUNCATED
         payload: dict[str, Any] = {"title": title, "description": body, "isDraft": draft}
         values = existing.get("value", []) if isinstance(existing, dict) else []
+        # ticket2pr never opens fork pull requests here: one from a fork is someone else's.
+        values = [pr for pr in values if not pr.get("forkSource")]
 
         def to_pr(data: Any) -> PullRequest:
             number = int(data["pullRequestId"])

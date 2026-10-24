@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
-
 from ticket2pr.domain import PullRequest
 from ticket2pr.scm.forge import ForgeClient, path_quote
 from ticket2pr.scm.git import GitAuth
@@ -21,21 +19,11 @@ _DRAFT_PREFIX = "Draft: "
 class GitLabClient(ForgeClient):
     name = "GitLab"
 
-    def __init__(
-        self,
-        *,
-        token: str,
-        api_url: str = _PUBLIC_API,
-        client: httpx.AsyncClient | None = None,
-        timeout_s: float = 30.0,
-    ) -> None:
-        super().__init__(
-            token=token,
-            api_url=api_url,
-            headers={"Authorization": f"Bearer {token}"},
-            client=client,
-            timeout_s=timeout_s,
-        )
+    default_api_url = _PUBLIC_API
+
+    @staticmethod
+    def _auth_headers(token: str) -> dict[str, str]:
+        return {"Authorization": f"Bearer {token}"}
 
     def git_auth(self) -> GitAuth | None:
         return GitAuth(token=self._token, username="oauth2")
@@ -67,7 +55,10 @@ class GitLabClient(ForgeClient):
             params={"state": "opened", "source_branch": branch, "target_branch": base},
         )
         for mr in existing or []:
-            if source_id is None or int(mr.get("source_project_id", -1)) == source_id:
+            # Without a fork, the merge request must come from the project itself: one from
+            # someone's fork with the same (predictable) branch name is not ours.
+            wanted = source_id if source_id is not None else mr.get("target_project_id")
+            if mr.get("source_project_id") == wanted:
                 data = await self._request(
                     "PUT",
                     f"{target}/merge_requests/{int(mr['iid'])}",

@@ -82,13 +82,14 @@ def _settings() -> Settings:
 def run(
     ticket: Annotated[str, typer.Argument(help="Ticket key, e.g. PROJ-42.")],
     repo: Annotated[
-        str | None, typer.Option(help="owner/name; overrides the T2P_REPOS mapping.")
+        str | None, typer.Option(help="Repository path (as in T2P_REPOS); overrides the mapping.")
     ] = None,
     tickets_dir: Annotated[
         Path | None, typer.Option(help="Read tickets from YAML files here instead of Jira.")
     ] = None,
     repos_dir: Annotated[
-        Path | None, typer.Option(help="Serve repos from <dir>/<owner>/<name> instead of GitHub.")
+        Path | None,
+        typer.Option(help="Serve repos from <dir>/<owner>/<name> instead of the forge."),
     ] = None,
     require_label: Annotated[
         bool, typer.Option(help="Skip tickets that lack the trigger label.")
@@ -195,11 +196,11 @@ def doctor() -> None:
         "at least one project → repo mapping": bool(settings.repos),
         sandbox_check: not missing,
     }
-    recommended = {
-        "pushes to a bot-owned fork (T2P_FORK_OWNER), so CI secrets stay out of reach": bool(
-            settings.fork_owner
-        ),
-    }
+    recommended = {}
+    if settings.scm_provider not in ("azure", "bitbucket"):  # no fork mode there
+        recommended[
+            "pushes to a bot-owned fork (T2P_FORK_OWNER), so CI secrets stay out of reach"
+        ] = bool(settings.fork_owner)
     for name, ok in checks.items():
         console.print(f"{'[green]✓[/green]' if ok else '[red]✗[/red]'} {name}")
     for name, ok in recommended.items():

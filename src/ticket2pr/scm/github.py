@@ -9,7 +9,7 @@ import httpx
 
 from ticket2pr.domain import PullRequest
 from ticket2pr.errors import SCMError
-from ticket2pr.scm.forge import ForgeClient, with_draft_fallback
+from ticket2pr.scm.forge import ForgeClient, fork_head, with_draft_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -20,25 +20,15 @@ _PUBLIC_API = "https://api.github.com"
 class GitHubClient(ForgeClient):
     name = "GitHub"
 
-    def __init__(
-        self,
-        *,
-        token: str,
-        api_url: str = _PUBLIC_API,
-        client: httpx.AsyncClient | None = None,
-        timeout_s: float = 30.0,
-    ) -> None:
-        super().__init__(
-            token=token,
-            api_url=api_url,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": _API_VERSION,
-            },
-            client=client,
-            timeout_s=timeout_s,
-        )
+    default_api_url = _PUBLIC_API
+
+    @staticmethod
+    def _auth_headers(token: str) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": _API_VERSION,
+        }
 
     def clone_url(self, repo: str) -> str:
         """HTTPS clone URL, for github.com or a GitHub Enterprise Server (``<host>/api/v3``)."""
@@ -65,7 +55,7 @@ class GitHubClient(ForgeClient):
         ``PullRequest.draft`` says which one it is.
         """
         qualified = f"{source_repo.split('/', 1)[0]}:{branch}"
-        head = branch if source_repo == repo else qualified
+        head = fork_head(repo, source_repo, branch)
         existing = await self._request(
             "GET", f"/repos/{repo}/pulls", params={"head": qualified, "state": "open"}
         )

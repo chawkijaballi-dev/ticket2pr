@@ -845,7 +845,7 @@ async def test_unsandboxed_jobs_reap_on_failure_and_before_cloning(
     ("exc", "public"),
     [
         (PolicyViolationError("too big"), "too big"),
-        (SCMError("remote: secret/path.py"), "a git or GitHub operation failed"),
+        (SCMError("remote: secret/path.py"), "a git or forge operation failed"),
         (TrackerError("Jira 500: body"), "the ticket could not be read or updated"),
         (OSError("/w/secret_name"), "internal error"),
     ],

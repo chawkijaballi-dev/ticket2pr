@@ -52,7 +52,7 @@ developer time for little value. ticket2pr handles them automatically, without t
 
 ### How you use it
 
-1. Try it locally, without Jira or GitHub (see [Quick start](#quick-start)): `make eval` is
+1. Try it locally, without Jira or a forge (see [Quick start](#quick-start)): `make eval` is
    free, and one real agent run on the `paginate` eval task costs about $0.20.
 2. In production, run the service (`ticket2pr serve` or `docker compose up --build`) and point
    a Jira webhook at `https://<host>/webhooks/jira`.
@@ -66,8 +66,8 @@ For a single ticket by hand: `uv run ticket2pr run SHOP-101`.
 | Concern | What ticket2pr does |
 |---|---|
 | **Cost** | Hard per-ticket budget (`max_budget_usd`) enforced by the SDK and shared across retries; tokens and dollars are reported on the PR and in the job history; the ticket gets the cost. |
-| **Correctness** | Runs the repository's tests after the agent; a failing run gets one retry with the failure output; still red means a **draft** PR (kept in sync on re-runs; a regular PR flagged as failing when drafts are disabled with `T2P_DRAFT_ON_TEST_FAILURE=false` or unavailable on the GitHub plan), never a green one. |
-| **Isolation** | Fresh clone per job; the agent's Bash *and* the repository's tests run in a bubblewrap sandbox (the service's home, data and working directories hidden, read-only root, no host IPC, network allowlist / off), which **fails closed** if it cannot start; a `PreToolUse` guard; no repository settings or hooks loaded; ticket2pr's GitHub and Jira tokens blanked in every environment the agent or the tests can see (Claude Code's own credentials too, with the sandbox: see the [security model](docs/security.md)). |
+| **Correctness** | Runs the repository's tests after the agent; a failing run gets one retry with the failure output; still red means a **draft** PR (kept in sync on re-runs; a regular PR flagged as failing when drafts are disabled with `T2P_DRAFT_ON_TEST_FAILURE=false` or unavailable on the forge's plan or version), never a green one. |
+| **Isolation** | Fresh clone per job; the agent's Bash *and* the repository's tests run in a bubblewrap sandbox (the service's home, data and working directories hidden, read-only root, no host IPC, network allowlist / off), which **fails closed** if it cannot start; a `PreToolUse` guard; no repository settings or hooks loaded; ticket2pr's forge and Jira tokens blanked in every environment the agent or the tests can see (Claude Code's own credentials too, with the sandbox: see the [security model](docs/security.md)). |
 | **CI exposure** | Optional fork mode pushes to a bot-owned fork and opens cross-repository PRs, so the target repository's CI never runs unreviewed agent code with its secrets. |
 | **Supply chain** | The agent never touches what gets pushed: its tree is copied into a fresh *publish clone* (no `.git` from the agent), committed and pushed there with global config, hooks and fsmonitor disabled. Protected paths (CI, `.env`, keys) are never committed, and a change containing a configured secret is refused. |
 | **Measurability** | A SWE-bench-style eval suite with hidden tests reports resolve rate and **cost per resolved ticket**. |
@@ -168,9 +168,9 @@ Set `T2P_SCM_PROVIDER`, `T2P_SCM_TOKEN` and, for a self-hosted forge, `T2P_SCM_A
 |---|---|---|---|---|---|
 | `github` (default) | GitHub, GitHub Enterprise Server | `owner/name` | empty, or `https://<host>/api/v3` | native | yes |
 | `gitlab` | GitLab.com, self-managed | `group/subgroup/name` | empty, or `https://<host>/api/v4` | `Draft:` title | yes |
-| `bitbucket` | Bitbucket Cloud | `workspace/name` | empty | native | yes |
+| `bitbucket` | Bitbucket Cloud | `workspace/name` | empty | native | no |
 | `bitbucket-server` | Bitbucket Data Center | `PROJECT/name` | `https://<host>/rest/api/1.0` | native (8.18+) | yes (`~user` forks) |
-| `azure` | Azure DevOps Services, Server | `organization/project/repository` | empty, or `https://<host>/<collection>` | native | no |
+| `azure` | Azure DevOps Services, Server | `organization/project/repository` (`collection/project/repository` on a Server) | empty, or `https://<host>` | native | no |
 | `gitea` | Gitea, Forgejo, Codeberg | `owner/name` | `https://<host>/api/v1` | `WIP:` title | yes |
 
 When a forge refuses drafts (plan, old server), ticket2pr opens a regular pull request flagged

@@ -12,12 +12,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_MODEL = "claude-opus-5-5"
 
-# owner/name; GitLab nests groups (group/sub/name); Azure DevOps is org/project/repo, and its
-# project names may hold spaces.
+# owner/name; GitLab nests groups (group/sub/name); Azure DevOps is org/project/repo (the
+# collection in the organization's place on a Server), and its project and repository names
+# may hold spaces.
 REPO_RE = re.compile(r"^[A-Za-z0-9_.~-]+(?:/[A-Za-z0-9_.-]+)+$")
-_AZURE_REPO_RE = re.compile(
-    r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?: [A-Za-z0-9_.-]+)*/[A-Za-z0-9_.-]+$"
-)
+_AZURE_SEGMENT = r"[A-Za-z0-9_.-]+(?: [A-Za-z0-9_.-]+)*"
+_AZURE_REPO_RE = re.compile(rf"^[A-Za-z0-9_.-]+/{_AZURE_SEGMENT}/{_AZURE_SEGMENT}$")
 # A fork's namespace; Bitbucket Data Center's personal projects start with "~".
 _OWNER_RE = re.compile(r"^~?[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
 _PROJECT_RE = re.compile(r"^[A-Z][A-Z0-9_]+$")
@@ -89,8 +89,9 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("T2P_SCM_API_URL", "T2P_GITHUB_API_URL"),
         description="API base URL, for self-hosted forges: https://<host>/api/v3 (GitHub "
         "Enterprise), https://<host>/api/v4 (GitLab), https://<host>/rest/api/1.0 (Bitbucket "
-        "Data Center), https://<host>/<collection> (Azure DevOps Server), "
-        "https://<host>/api/v1 (Gitea, Forgejo; required). Empty: the provider's cloud.",
+        "Data Center; required), https://<host> (Azure DevOps Server; the collection goes in "
+        "T2P_REPOS), https://<host>/api/v1 (Gitea, Forgejo; required). Empty: the provider's "
+        "cloud.",
     )
     repos: dict[str, str] = Field(
         default_factory=dict,
@@ -102,7 +103,7 @@ class Settings(BaseSettings):
         description="Push branches to <fork_owner>/<name> (a fork owned by the bot) and open "
         "cross-repository pull requests. Recommended: a branch pushed to the target repository "
         "runs its CI with the repository's secrets before anyone reviews the agent's code. "
-        "Not supported with Azure DevOps.",
+        "Not supported with Azure DevOps or Bitbucket Cloud.",
     )
     base_branch: str = Field(default="main", description="Branch to clone and target with PRs.")
     branch_prefix: str = Field(default="ticket2pr/", description="Prefix of the branches pushed.")
@@ -161,7 +162,8 @@ class Settings(BaseSettings):
             *(".git/", "**/.env", "**/*.pem", "**/*.key"),
             # Each forge's CI configuration: it runs with the repository's secrets.
             *(".github/", ".gitlab-ci.yml", ".gitlab/", "bitbucket-pipelines.yml"),
-            *("azure-pipelines.yml", ".azure-pipelines/", ".gitea/", ".forgejo/"),
+            *("azure-pipelines.yml", "azure-pipelines.yaml", ".azure-pipelines/"),
+            *(".gitea/", ".forgejo/", ".woodpecker.yml", ".woodpecker.yaml", ".woodpecker/"),
         ],
         description="Glob patterns never committed; the agent's file tools may not write them "
         "(its Bash commands are not checked).",
@@ -199,8 +201,10 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"invalid {self.scm_provider} repository for {project}: {repo!r} ({error})"
                 )
-        if self.fork_owner and self.scm_provider == "azure":
-            raise ValueError("T2P_FORK_OWNER is not supported with Azure DevOps")
+        # Azure DevOps: no fork pull requests over this API. Bitbucket Cloud: access tokens are
+        # scoped to one repository or workspace, so none can push to a fork and open the PR.
+        if self.fork_owner and self.scm_provider in ("azure", "bitbucket"):
+            raise ValueError(f"T2P_FORK_OWNER is not supported with {self.scm_provider}")
         return self
 
     @model_validator(mode="after")
