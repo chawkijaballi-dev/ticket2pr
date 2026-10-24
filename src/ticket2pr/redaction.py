@@ -33,7 +33,15 @@ _CREDENTIAL_NAME = re.compile(
 # Header lists: "k=v,k2=v2" (OTLP) or "Name: value" lines (ANTHROPIC_CUSTOM_HEADERS). Only
 # credential headers count (not x-honeycomb-dataset or anthropic-beta).
 _HEADER = re.compile(r"([^\n,=:]+)[=:]\s*([^\n,]+)")
-_CREDENTIAL_HEADER = re.compile(r"auth|key|token|secret|password|team", re.IGNORECASE)
+_CREDENTIAL_HEADER = re.compile(r"auth|key|token|secret|password|team|dsn", re.IGNORECASE)
+
+
+def _url_secret(url: str) -> str:
+    """The credential in a URL: its password, or a user name standing alone (a token)."""
+    with suppress(ValueError):
+        parts = urlsplit(url)
+        return unquote(parts.password or parts.username or "")
+    return ""
 
 
 class Redactor:
@@ -57,19 +65,18 @@ class Redactor:
                     continue
                 values.append(value)
                 for header, part in _HEADER.findall(value):
-                    if not _CREDENTIAL_HEADER.search(header):
-                        continue
                     decoded = unquote(part.strip())  # OTLP headers are percent-encoded
-                    values += [part, decoded]
+                    in_url = _url_secret(decoded)  # a DSN: https://<token>@host/1
+                    if not (_CREDENTIAL_HEADER.search(header) or in_url):
+                        continue
+                    values += [part, decoded, in_url]
                     if "authorization" in header.lower():  # "Bearer <token>", "Api-Token <t>"
                         values.append(decoded.rpartition(" ")[2])
         for name in PROXY_ENV_VARS:
             proxy = os.environ.get(name, "")
-            with suppress(ValueError):
-                # curl and pip read "user:pass@host:port" without a scheme as http.
-                url = urlsplit(proxy if "://" in proxy else f"http://{proxy}")
-                if url.password or url.username:  # a token can be the user name alone
-                    values += [proxy, unquote(url.password or ""), unquote(url.username or "")]
+            # curl and pip read "user:pass@host:port" without a scheme as http.
+            if secret := _url_secret(proxy if "://" in proxy else f"http://{proxy}"):
+                values += [proxy, secret]
         return cls(values)
 
     def redact(self, text: str) -> str:

@@ -192,7 +192,8 @@ exercise the real pipeline end to end, including attacks such as `.git/config` r
   with `T2P_TEST_COMMAND`, and runs with the repository's toolchain (not ticket2pr's
   virtualenv); repos without tests get draft PRs.
 - The sandbox needs Linux with bubblewrap; elsewhere, run the worker in an isolated
-  container with `T2P_SANDBOX=false`.
+  container with `T2P_SANDBOX=false`. Both sandboxes hide `/run`: toolchains installed under
+  it (NixOS's `/run/current-system`) are not visible to the agent or the tests.
 - A job cut short by a crash (not a graceful stop) is marked failed at the next `serve` start
   but gets no ticket comment; re-add the label to retry it. A `ticket2pr run` killed that way
   (SIGKILL, out of memory) leaves its job `running`, which blocks the ticket until `serve`

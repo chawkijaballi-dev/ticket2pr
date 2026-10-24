@@ -68,7 +68,8 @@ def _probe_bwrap() -> bool:
     """
     try:
         with tempfile.TemporaryDirectory(prefix="t2p-probe-") as workspace:
-            argv = TestSandbox(hidden=()).wrap(["true"], Path(workspace))
+            # Absolute: PATH may sit under the /run just emptied (NixOS); not a bwrap failure.
+            argv = TestSandbox(hidden=()).wrap(["/bin/sh", "-c", ":"], Path(workspace))
             probe = subprocess.run(argv, capture_output=True, timeout=10, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return False

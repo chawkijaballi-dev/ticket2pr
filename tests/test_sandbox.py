@@ -613,6 +613,10 @@ def test_redactor_masks_proxy_passwords(
     assert Redactor.from_settings(settings).redact("u=ghp_tokenonly1") == f"u={MASK}"
     monkeypatch.setenv("HTTPS_PROXY", "user:pa55word99@proxy.test:3128")
     assert Redactor.from_settings(settings).redact("pa55word99") == MASK
+    monkeypatch.setenv("HTTPS_PROXY", "http://ticket2pr:s3cr3tpw@proxy.test:3128")
+    redactor = Redactor.from_settings(settings)
+    assert redactor.redact("ticket2pr opened it") == "ticket2pr opened it"  # user, not secret
+    assert redactor.redact("pw s3cr3tpw") == f"pw {MASK}"
 
 
 def test_redactor_masks_provider_credentials(
@@ -630,6 +634,11 @@ def test_redactor_masks_provider_credentials(
     assert Redactor.from_settings(settings).redact("token otlp-enc-789") == f"token {MASK}"
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", "Authorization=Api-Token%20dt0c01.ABCDEFGH")
     assert Redactor.from_settings(settings).contains_secret("dt0c01.ABCDEFGH")
+    dsn = "https://tok_abcdef123456@api.uptrace.dev/1"
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", f"uptrace-dsn={dsn},x-other=1")
+    redactor = Redactor.from_settings(settings)
+    assert redactor.contains_secret(f"dsn: {dsn}")
+    assert redactor.contains_secret("tok_abcdef123456")
 
 
 def test_redactor_ignores_variables_that_are_not_credentials(

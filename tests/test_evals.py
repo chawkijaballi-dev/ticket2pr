@@ -8,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from conftest import ScriptedAgent, do_nothing
-from ticket2pr import cli
+from ticket2pr import cli, evals
 from ticket2pr.agent.base import AgentTask
 from ticket2pr.config import Settings
 from ticket2pr.errors import ConfigurationError
@@ -42,6 +42,17 @@ async def test_hidden_tests_reject_the_unfixed_repo(settings: Settings) -> None:
     assert "failed" not in {result.status for result in summary.results}
     assert [result.resolved for result in summary.results] == [False] * len(TASK_NAMES)
     assert summary.cost_per_resolved_usd is None
+
+
+def test_grader_refuses_symlinks_in_tests(tmp_path: Path) -> None:
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    assert not evals._has_symlink(tests)
+    (tests / "test_x.py").symlink_to(tmp_path / "elsewhere")
+    assert evals._has_symlink(tests)
+    linked = tmp_path / "linked"
+    linked.symlink_to(tmp_path)
+    assert evals._has_symlink(linked)
 
 
 def test_discover_rejects_unknown_and_invalid_tasks(tmp_path: Path) -> None:

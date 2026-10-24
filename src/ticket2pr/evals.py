@@ -178,14 +178,15 @@ async def _run_task(
     if job.pr_url and job.branch:
         checkout = scratch / "grade"
         _git(scratch, "clone", "-q", "--branch", job.branch, origin.as_uri(), str(checkout))
-        shutil.copytree(task.path / "hidden_tests", checkout / "tests", dirs_exist_ok=True)
-        report = await run_tests(
-            pytest_cmd,
-            checkout,
-            timeout_s=settings.test_timeout_s,
-            sandbox=sandbox_profile(settings),
-        )
-        resolved = report.passed
+        if not _has_symlink(checkout / "tests"):  # copying through one writes outside scratch
+            shutil.copytree(task.path / "hidden_tests", checkout / "tests", dirs_exist_ok=True)
+            report = await run_tests(
+                pytest_cmd,
+                checkout,
+                timeout_s=settings.test_timeout_s,
+                sandbox=sandbox_profile(settings),
+            )
+            resolved = report.passed
     return EvalResult(
         task=task.name,
         ticket=task.key,
@@ -211,3 +212,8 @@ def _git(cwd: Path, *args: str) -> None:
         check=True,
         capture_output=True,
     )
+
+
+def _has_symlink(path: Path) -> bool:
+    """``path`` or anything under it is a symlink (the agent committed it: not graded)."""
+    return path.is_symlink() or any(entry.is_symlink() for entry in path.rglob("*"))
