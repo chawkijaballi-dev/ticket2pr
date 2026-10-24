@@ -182,7 +182,7 @@ class Pipeline:
         base_sha = await work.head()
         job.branch = settings.branch_prefix + ticket.key.lower()  # stable across title edits
         self._store.save(job)
-        push_repo, head = self._push_target(job.repo, job.branch)
+        push_repo = self._push_repo(job.repo)
         push_url = self._host.clone_url(push_repo)
         await self._own_branch_head(work, push_url, job.branch, auth)  # before any spend
 
@@ -230,7 +230,8 @@ class Pipeline:
         await publish.push(push_url, job.branch, expected_sha=expected, auth=auth)
         pr = await self._host.open_or_update_pr(
             job.repo,
-            head=head,
+            source_repo=push_repo,
+            branch=job.branch,
             base=settings.base_branch,
             title=render.pr_title(ticket),
             body=self._pr_body(
@@ -248,12 +249,10 @@ class Pipeline:
         job.status = JobStatus.SUCCEEDED if tests.passed else JobStatus.NEEDS_REVIEW
         return _Outcome(tests=tests, pr=pr)
 
-    def _push_target(self, repo: str, branch: str) -> tuple[str, str]:
-        """Where the branch goes, and the PR ``head`` naming it (``owner:branch`` for forks)."""
+    def _push_repo(self, repo: str) -> str:
+        """Where the branch goes: ``repo``, or the bot's fork of it (``<fork_owner>/<name>``)."""
         owner = self._settings.fork_owner
-        if not owner:
-            return repo, branch
-        return f"{owner}/{repo.split('/', 1)[1]}", f"{owner}:{branch}"
+        return f"{owner}/{repo.rsplit('/', 1)[1]}" if owner else repo
 
     async def _reap_untrusted_processes(self) -> None:
         """Without the sandbox, nothing contains what the agent or the tests left running."""

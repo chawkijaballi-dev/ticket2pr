@@ -6,7 +6,7 @@
    clone. Everything that leaves the machine (commits, pushes, PRs, comments) is done by
    deterministic code after the agent has stopped.
 2. **Ports and adapters.** The pipeline talks to the outside world through three protocols,
-   `Tracker`, `RepoHost` and `CodingAgent`, never through Jira, GitHub or the SDK directly
+   `Tracker`, `RepoHost` and `CodingAgent`, never through Jira, a forge or the SDK directly
    (git, the test runner and the SQLite `JobStore` are concrete). Production adapters and
    offline adapters (`LocalTracker`, `LocalHost`, scripted agents) are interchangeable, which
    is what makes the end-to-end tests and the eval suite possible.
@@ -36,7 +36,7 @@ flowchart LR
     P --> V[verify.py]
     P --> G[scm/git.py]
     T --- J[JiraTracker] & L[LocalTracker]
-    H --- GH[GitHubHost] & LH[LocalHost]
+    H --- GH[GitHub, GitLab, Bitbucket,<br/>Azure DevOps, Gitea clients] & LH[LocalHost]
     A --- C[ClaudeAgent<br/>+ guard] & O[OracleAgent]
 ```
 
@@ -67,9 +67,10 @@ the failing output (tail) is passed back as feedback.
 
 - **Another tracker** (Linear, GitHub Issues): implement `Tracker` (`get_ticket`, `comment`,
   `aclose`) and wire it in `runtime.build_runtime`.
-- **Another forge** (GitLab): implement `RepoHost` (`clone_url`, `git_auth`,
-  `open_or_update_pr`, `aclose`). Fork mode is GitHub-shaped: the pipeline pushes to
-  `<fork_owner>/<name>` and passes `head` as `owner:branch`.
+- **Another forge**: subclass `scm.forge.ForgeClient` (an authenticated JSON API) and
+  implement `clone_url`, `open_or_update_pr` and, if the token is not a Basic password,
+  `git_auth`; add it to `runtime._FORGES` and `config.ScmProvider`. In fork mode the pipeline
+  pushes to `<fork_owner>/<name>` and passes it as `source_repo`.
 - **Another agent**: implement `CodingAgent.run(task) -> AgentResult`. The pipeline's
   guardrails (git hygiene, protected paths, tests, budget accounting) apply unchanged.
 - **A distributed queue**: replace `JobQueue`'s `submit`/`enqueue`/`start`/`stop` (restart

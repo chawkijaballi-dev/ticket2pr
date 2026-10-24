@@ -12,15 +12,24 @@ from ticket2pr.agent.claude import ClaudeAgent
 from ticket2pr.config import Settings
 from ticket2pr.pipeline import Pipeline
 from ticket2pr.sandbox import hidden_paths, toolchain_paths
-from ticket2pr.scm.github import GitHubClient
-from ticket2pr.scm.host import GitHubHost, LocalHost, RepoHost
+from ticket2pr.scm import (
+    AzureDevOpsClient,
+    BitbucketCloudClient,
+    BitbucketServerClient,
+    GiteaClient,
+    GitHubClient,
+    GitLabClient,
+    LocalHost,
+    RepoHost,
+)
+from ticket2pr.scm.forge import ForgeClient
 from ticket2pr.store import JobStore
 from ticket2pr.trackers.base import Tracker
 from ticket2pr.trackers.jira import JiraTracker
 from ticket2pr.trackers.local import LocalTracker
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Callable
 
 
 @dataclass(slots=True)
@@ -53,6 +62,21 @@ def build_agent(settings: Settings) -> CodingAgent:
     )
 
 
+_FORGES: dict[str, Callable[..., ForgeClient]] = {
+    "github": GitHubClient,
+    "gitlab": GitLabClient,
+    "bitbucket": BitbucketCloudClient,
+    "bitbucket-server": BitbucketServerClient,
+    "azure": AzureDevOpsClient,
+    "gitea": GiteaClient,
+}
+
+
+def build_host(settings: Settings) -> RepoHost:
+    forge = _FORGES[settings.scm_provider]
+    return forge(token=settings.scm_token.get_secret_value(), api_url=settings.scm_api)
+
+
 def build_runtime(
     settings: Settings,
     *,
@@ -71,11 +95,7 @@ def build_runtime(
             api_token=settings.jira_api_token.get_secret_value(),
         )
     host: RepoHost
-    if repos_dir is not None:
-        host = LocalHost(repos_dir)
-    else:
-        token = settings.github_token.get_secret_value()
-        host = GitHubHost(GitHubClient(token=token, api_url=settings.github_api_url), token)
+    host = LocalHost(repos_dir) if repos_dir is not None else build_host(settings)
     store = JobStore(settings.db_path)
     pipeline = Pipeline(
         settings=settings,

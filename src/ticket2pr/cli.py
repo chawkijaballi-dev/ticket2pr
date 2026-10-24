@@ -19,9 +19,9 @@ from rich.table import Table
 from ticket2pr import __version__
 from ticket2pr.config import (
     CLAUDE_CREDENTIAL_ENV_VARS,
-    REPO_RE,
     Settings,
     enabled_cloud_providers,
+    repo_error,
 )
 from ticket2pr.domain import Job, JobStatus, is_ticket_key
 from ticket2pr.errors import Ticket2PRError
@@ -100,9 +100,9 @@ def run(
     """Process one ticket now, in the foreground."""
     if not is_ticket_key(ticket):
         raise typer.BadParameter(f"{ticket!r} is not a ticket key like PROJ-42")
-    if repo is not None and not REPO_RE.fullmatch(repo):
-        raise typer.BadParameter(f"--repo {repo!r} is not owner/name")
     settings = _settings()
+    if repo is not None and (error := repo_error(settings.scm_provider, repo)):
+        raise typer.BadParameter(f"--repo {repo!r}: {error}")
     if repos_dir is not None:  # local repositories have no forks
         settings = settings.model_copy(update={"fork_owner": ""})
     options = RunOptions(require_label=require_label, keep_workspace=keep_workspace)
@@ -189,7 +189,8 @@ def doctor() -> None:
             and settings.jira_email
             and settings.jira_api_token.get_secret_value()
         ),
-        "GitHub token": bool(settings.github_token.get_secret_value()),
+        f"{settings.scm_provider} token": bool(settings.scm_token.get_secret_value()),
+        f"{settings.scm_provider} API URL": bool(settings.scm_api),
         "webhook secret": bool(settings.jira_webhook_secret.get_secret_value()),
         "at least one project → repo mapping": bool(settings.repos),
         sandbox_check: not missing,

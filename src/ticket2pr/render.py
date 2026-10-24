@@ -12,9 +12,10 @@ _MAX_GUARDRAIL_LINES = 20  # GitHub refuses bodies over 65,536 characters
 _MAX_GUARDRAIL_CHARS = 300
 _HTML_START = re.compile(r"<(?=[A-Za-z/!?])")
 _FENCE = re.compile(r"`{3,}|~{3,}")
-# @user, @org/team, #123, owner/repo#45 and "Fixes #12": a zero-width space after @ or #
-# keeps the text readable but stops mentions, cross-references and closing keywords.
-_REFERENCE = re.compile(r"([@#])(?=[\w/-])")
+# @user, @org/team, #123, owner/repo#45, !12 (GitLab, Azure DevOps) and "Fixes #12": a
+# zero-width space after @, # or ! keeps the text readable but stops mentions,
+# cross-references and closing keywords.
+_REFERENCE = re.compile(r"([@#!])(?=[\w/-])")
 # GitHub also links GH-7: a zero-width space after the G.
 _GH_REFERENCE = re.compile(r"\b(G)(?=H-\d)", re.IGNORECASE)
 # GitHub also honours "Fixes https://github.com/o/r/issues/7": break the keyword itself.

@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- GitLab (with nested groups), Bitbucket Cloud, Bitbucket Data Center, Azure DevOps and
+  Gitea/Forgejo, next to GitHub: `T2P_SCM_PROVIDER`, `T2P_SCM_TOKEN` and `T2P_SCM_API_URL`
+  (`T2P_GITHUB_TOKEN` and `T2P_GITHUB_API_URL` are still read). Each forge's CI files are
+  protected paths by default; `!123` references are neutralised like `#123`.
+
 ### Changed
 
 - Branches are named `ticket2pr/<key in lower case>` (no title slug), so a re-run after a title edit

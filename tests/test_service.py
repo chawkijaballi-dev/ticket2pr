@@ -25,7 +25,7 @@ from ticket2pr.domain import Job, JobStatus
 from ticket2pr.errors import ConfigurationError
 from ticket2pr.pipeline import RunOptions
 from ticket2pr.runtime import Runtime, build_runtime
-from ticket2pr.scm.host import GitHubHost
+from ticket2pr.scm import GitHubClient
 from ticket2pr.server import _Deliveries, create_app, trigger_from_event, verify_signature
 from ticket2pr.store import JobStore
 from ticket2pr.trackers.jira import JiraTracker
@@ -341,12 +341,12 @@ async def test_build_runtime_production_wiring(settings: Settings) -> None:
             "jira_base_url": "https://acme.atlassian.net",
             "jira_email": "bot@acme.test",
             "jira_api_token": SecretStr("j"),
-            "github_token": SecretStr("g"),
+            "scm_token": SecretStr("g"),
         }
     )
     runtime = build_runtime(configured)
     assert isinstance(runtime.tracker, JiraTracker)
-    assert isinstance(runtime.host, GitHubHost)
+    assert isinstance(runtime.host, GitHubClient)
     await runtime.aclose()
 
 
@@ -441,7 +441,7 @@ def test_cli_doctor_reports_missing_config(monkeypatch: pytest.MonkeyPatch, tmp_
     result = runner.invoke(cli.app, ["doctor"])
     assert result.exit_code == 1
     assert "✗" in result.output
-    assert "GitHub token" in result.output
+    assert "github token" in result.output
 
 
 def test_doctor_accepts_a_cloud_provider(

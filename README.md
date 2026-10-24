@@ -1,6 +1,6 @@
 # ticket2pr
 
-**Turn Jira tickets into review-ready GitHub pull requests with a budget-capped, sandboxed Claude agent.**
+**Turn Jira tickets into review-ready pull requests (GitHub, GitLab, Bitbucket, Azure DevOps, Gitea/Forgejo) with a budget-capped, sandboxed Claude agent.**
 
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
 ![mypy: strict](https://img.shields.io/badge/mypy-strict-blue)
@@ -27,7 +27,7 @@ trustworthy, and what reviewers see.
 
 ### What it is for
 
-A Jira ticket becomes a **review-ready GitHub pull request** without a developer writing the code.
+A Jira ticket becomes a **review-ready pull request** without a developer writing the code.
 An AI agent (Claude) reads the ticket, edits the repository, runs the tests and opens the PR.
 Every PR states exactly what it cost.
 
@@ -45,7 +45,7 @@ developer time for little value. ticket2pr handles them automatically, without t
 
 | | Content |
 |---|---|
-| **Input** | A Jira ticket labelled `ticket2pr` (title + description), and the GitHub repository mapped to its project (`T2P_REPOS`, e.g. `{"SHOP": "acme/shop"}`). |
+| **Input** | A Jira ticket labelled `ticket2pr` (title + description), and the repository mapped to its project (`T2P_REPOS`, e.g. `{"SHOP": "acme/shop"}`). |
 | **Output** | A **branch** `ticket2pr/<key, lowercased>` (e.g. `ticket2pr/shop-101`) and a **PR** with the change summary, test results, diff size, cost, tokens and turns. The PR is a *draft* when the tests fail or did not run. |
 | **Output (Jira)** | A **comment on the ticket**: PR link, test status, cost; on failure, the reason. |
 | **History** | A SQLite job database (status, cost, PR link), readable with `ticket2pr jobs` or `GET /jobs`. |
@@ -80,7 +80,7 @@ sequenceDiagram
     participant API as ticket2pr service
     participant Agent as Claude agent (sandboxed)
     participant Repo as Workspace (fresh clone)
-    participant GH as GitHub
+    participant GH as Forge (GitHub, GitLab, ...)
 
     Jira->>API: webhook (label "ticket2pr" added), HMAC-signed
     API->>API: verify signature, dedupe, persist job, enqueue
@@ -105,7 +105,7 @@ Code map (`src/ticket2pr/`):
 | `pipeline.py` | The orchestration above; maps every failure to a recorded job status |
 | `agent/` | `CodingAgent` protocol, Claude Agent SDK runner, prompts, tool-call guard |
 | `trackers/` | `Tracker` protocol; Jira Cloud (with ADF conversion) and local YAML files |
-| `scm/` | Hardened async git wrapper, GitHub REST client, `RepoHost` (GitHub or local) |
+| `scm/` | Hardened async git wrapper, one client per forge, `RepoHost` (a forge or local) |
 | `verify.py`, `sandbox.py` | Test-command detection; bubblewrap sandbox for tests; process hardening |
 | `redaction.py` | Masks configured secrets in published text, refuses them in commits |
 | `server.py` / `worker.py` | FastAPI webhook + jobs API, asyncio worker pool |
@@ -128,7 +128,7 @@ make install            # uv sync + pre-commit hooks
 make eval               # offline suite with the oracle agent: free, no credentials
 ```
 
-### Try it on a local repository, no Jira or GitHub needed
+### Try it on a local repository, no Jira or forge needed
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
@@ -144,7 +144,7 @@ uv run ticket2pr run SHOP-101 --repo acme/shop --tickets-dir ./tickets --repos-d
 ### Run the service
 
 ```bash
-cp .env.example .env    # Jira, GitHub, Anthropic credentials + project → repo mapping
+cp .env.example .env    # Jira, forge, Anthropic credentials + project → repo mapping
 uv run ticket2pr doctor # checks the configuration
 uv run ticket2pr serve  # or: docker compose up --build
 ```
@@ -157,6 +157,24 @@ updated*, pointing to `https://<host>/webhooks/jira`, with the same secret as
 uv run ticket2pr jobs              # recent jobs with cost and PR links
 curl -H "Authorization: Bearer $T2P_API_TOKEN" localhost:8080/jobs
 ```
+
+### Supported forges
+
+Set `T2P_SCM_PROVIDER`, `T2P_SCM_TOKEN` and, for a self-hosted forge, `T2P_SCM_API_URL`
+(`T2P_GITHUB_TOKEN` and `T2P_GITHUB_API_URL` are still read). The token scopes are in the
+[security model](docs/security.md#deployment-guidance).
+
+| `T2P_SCM_PROVIDER` | Forge | Repository in `T2P_REPOS` | `T2P_SCM_API_URL` | Drafts | Fork mode |
+|---|---|---|---|---|---|
+| `github` (default) | GitHub, GitHub Enterprise Server | `owner/name` | empty, or `https://<host>/api/v3` | native | yes |
+| `gitlab` | GitLab.com, self-managed | `group/subgroup/name` | empty, or `https://<host>/api/v4` | `Draft:` title | yes |
+| `bitbucket` | Bitbucket Cloud | `workspace/name` | empty | native | yes |
+| `bitbucket-server` | Bitbucket Data Center | `PROJECT/name` | `https://<host>/rest/api/1.0` | native (8.18+) | yes (`~user` forks) |
+| `azure` | Azure DevOps Services, Server | `organization/project/repository` | empty, or `https://<host>/<collection>` | native | no |
+| `gitea` | Gitea, Forgejo, Codeberg | `owner/name` | `https://<host>/api/v1` | `WIP:` title | yes |
+
+When a forge refuses drafts (plan, old server), ticket2pr opens a regular pull request flagged
+as failing instead.
 
 ## Evaluation
 

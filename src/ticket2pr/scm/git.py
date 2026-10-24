@@ -23,6 +23,7 @@ import stat
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from ticket2pr.domain import ChangeSet
 from ticket2pr.errors import PolicyViolationError, SCMError
@@ -48,17 +49,20 @@ _SAFE_CONFIG = (
 
 @dataclass(frozen=True, slots=True)
 class GitAuth:
-    """HTTPS token auth, e.g. a GitHub installation or fine-grained token."""
+    """HTTPS token auth: Basic with the token as password (most forges), or Bearer."""
 
     token: str
     username: str = "x-access-token"
+    scheme: Literal["Basic", "Bearer"] = "Basic"
 
     def env(self) -> dict[str, str]:
-        basic = base64.b64encode(f"{self.username}:{self.token}".encode()).decode()
+        credential = self.token
+        if self.scheme == "Basic":
+            credential = base64.b64encode(f"{self.username}:{self.token}".encode()).decode()
         return {
             "GIT_CONFIG_COUNT": "1",
             "GIT_CONFIG_KEY_0": "http.extraHeader",
-            "GIT_CONFIG_VALUE_0": f"Authorization: Basic {basic}",
+            "GIT_CONFIG_VALUE_0": f"Authorization: {self.scheme} {credential}",
         }
 
 

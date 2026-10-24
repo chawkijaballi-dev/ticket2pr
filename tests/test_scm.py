@@ -12,7 +12,7 @@ import respx
 
 from conftest import REPO, git
 from ticket2pr.errors import ConfigurationError, PolicyViolationError, SCMError
-from ticket2pr.scm import GitAuth, GitHubClient, GitHubHost, GitRepo, LocalHost, RepoHost
+from ticket2pr.scm import GitAuth, GitHubClient, GitRepo, LocalHost, RepoHost
 from ticket2pr.scm.git import sync_tree
 
 API = "https://api.github.com"
@@ -175,7 +175,13 @@ async def test_github_creates_pr_when_none_is_open() -> None:
     )
     client = GitHubClient(token="t")
     pr = await client.open_or_update_pr(
-        "acme/api", head="ticket2pr/x", base="main", title="T", body="B", draft=True
+        "acme/api",
+        source_repo="acme/api",
+        branch="ticket2pr/x",
+        base="main",
+        title="T",
+        body="B",
+        draft=True,
     )
     assert (pr.number, pr.draft) == (12, True)
     sent = json.loads(create.calls.last.request.content)
@@ -193,7 +199,13 @@ async def test_github_updates_open_pr() -> None:
         json={"number": 5, "html_url": "https://github.com/acme/api/pull/5", "draft": False}
     )
     pr = await GitHubClient(token="t").open_or_update_pr(
-        "acme/api", head="b", base="main", title="T", body="B", draft=False
+        "acme/api",
+        source_repo="acme/api",
+        branch="b",
+        base="main",
+        title="T",
+        body="B",
+        draft=False,
     )
     assert pr.number == 5
     assert lookup.calls.last.request.url.params["head"] == "acme:b"
@@ -205,12 +217,24 @@ async def test_github_errors() -> None:
     respx.get(f"{API}/repos/acme/api/pulls").respond(403, text="forbidden")
     with pytest.raises(SCMError, match="403"):
         await GitHubClient(token="t").open_or_update_pr(
-            "acme/api", head="b", base="main", title="T", body="B", draft=False
+            "acme/api",
+            source_repo="acme/api",
+            branch="b",
+            base="main",
+            title="T",
+            body="B",
+            draft=False,
         )
     respx.get(f"{API}/repos/acme/web/pulls").mock(side_effect=httpx.ReadTimeout("slow"))
     with pytest.raises(SCMError, match="slow"):
         await GitHubClient(token="t").open_or_update_pr(
-            "acme/web", head="b", base="main", title="T", body="B", draft=False
+            "acme/web",
+            source_repo="acme/web",
+            branch="b",
+            base="main",
+            title="T",
+            body="B",
+            draft=False,
         )
 
 
@@ -234,7 +258,13 @@ async def test_github_syncs_draft_state_on_update(
     )
     graphql = respx.post(f"{API}/graphql").respond(json={"data": {}})
     pr = await GitHubClient(token="t").open_or_update_pr(
-        "acme/api", head="b", base="main", title="T", body="B", draft=want_draft
+        "acme/api",
+        source_repo="acme/api",
+        branch="b",
+        base="main",
+        title="T",
+        body="B",
+        draft=want_draft,
     )
     assert pr.draft is want_draft
     sent = json.loads(graphql.calls.last.request.content)
@@ -251,10 +281,10 @@ async def test_github_falls_back_to_a_regular_pr_when_drafts_are_refused() -> No
         httpx.Response(201, json={"number": 7, "html_url": "https://github.com/acme/api/pull/7"}),
     ]
     pr = await GitHubClient(token="t").open_or_update_pr(
-        "acme/api", head="b", base="main", title="T", body="B", draft=True
+        "acme/api", source_repo="acme/api", branch="b", base="main", title="T", body="B", draft=True
     )
     assert (pr.number, pr.draft) == (7, False)
-    assert json.loads(create.calls.last.request.content)["draft"] is False
+    assert "draft" not in json.loads(create.calls.last.request.content)
 
 
 @respx.mock
@@ -263,7 +293,13 @@ async def test_github_create_errors_other_than_draft_refusal_propagate() -> None
     respx.post(f"{API}/repos/acme/api/pulls").respond(422, json={"message": "No commits"})
     with pytest.raises(SCMError, match="422"):
         await GitHubClient(token="t").open_or_update_pr(
-            "acme/api", head="b", base="main", title="T", body="B", draft=False
+            "acme/api",
+            source_repo="acme/api",
+            branch="b",
+            base="main",
+            title="T",
+            body="B",
+            draft=False,
         )
 
 
@@ -275,7 +311,7 @@ async def test_github_reports_the_real_state_when_draft_change_fails() -> None:
     )
     respx.post(f"{API}/graphql").respond(json={"errors": [{"message": "Draft PRs unavailable"}]})
     pr = await GitHubClient(token="t").open_or_update_pr(
-        "acme/api", head="b", base="main", title="T", body="B", draft=True
+        "acme/api", source_repo="acme/api", branch="b", base="main", title="T", body="B", draft=True
     )
     assert pr.draft is False
 
@@ -289,7 +325,13 @@ async def test_github_enterprise_graphql_endpoint() -> None:
     )
     graphql = respx.post("https://git.acme.test/api/graphql").respond(json={"data": {}})
     await GitHubClient(token="t", api_url=api).open_or_update_pr(
-        "acme/api", head="b", base="main", title="T", body="B", draft=False
+        "acme/api",
+        source_repo="acme/api",
+        branch="b",
+        base="main",
+        title="T",
+        body="B",
+        draft=False,
     )
     assert graphql.called
 
@@ -300,17 +342,23 @@ def test_github_requires_token() -> None:
 
 
 @respx.mock
-async def test_github_host_delegates() -> None:
+async def test_github_client_is_a_repo_host() -> None:
     respx.get(f"{API}/repos/acme/api/pulls").respond(json=[])
     respx.post(f"{API}/repos/acme/api/pulls").respond(
         json={"number": 1, "html_url": "https://github.com/acme/api/pull/1"}
     )
-    host = GitHubHost(GitHubClient(token="t"), "t")
+    host = GitHubClient(token="t")
     assert isinstance(host, RepoHost)
     assert host.clone_url("acme/api") == "https://github.com/acme/api.git"
     assert host.git_auth() == GitAuth(token="t")
     pr = await host.open_or_update_pr(
-        "acme/api", head="b", base="main", title="T", body="B", draft=False
+        "acme/api",
+        source_repo="acme/api",
+        branch="b",
+        base="main",
+        title="T",
+        body="B",
+        draft=False,
     )
     assert pr.url.endswith("/pull/1")
     await host.aclose()
@@ -325,10 +373,10 @@ async def test_local_host(repos_dir: Path) -> None:
     with pytest.raises(SCMError):
         host.clone_url("acme/missing")
     first = await host.open_or_update_pr(
-        REPO, head="b1", base="main", title="T", body="B", draft=False
+        REPO, source_repo=REPO, branch="b1", base="main", title="T", body="B", draft=False
     )
     again = await host.open_or_update_pr(
-        REPO, head="b1", base="main", title="T2", body="B", draft=True
+        REPO, source_repo=REPO, branch="b1", base="main", title="T2", body="B", draft=True
     )
     assert first.url == again.url
     assert json.loads(Path(again.url.removeprefix("file://")).read_text())["title"] == "T2"

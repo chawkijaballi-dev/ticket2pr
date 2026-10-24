@@ -579,7 +579,7 @@ def test_kill_descendants_is_a_noop_elsewhere(monkeypatch: pytest.MonkeyPatch) -
 def test_redactor_masks_and_detects(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-0123456789")
     settings = Settings(
-        github_token=SecretStr("ghp_abcdefghij"),
+        scm_token=SecretStr("ghp_abcdefghij"),
         jira_api_token=SecretStr("short"),  # too short to mask safely
         _env_file=None,
     )

@@ -14,10 +14,11 @@ name, `ANTHROPIC_API_KEY`, in the environment or in `.env`.
 | `T2P_JIRA_API_TOKEN` | *(secret)* | Jira API token. |
 | `T2P_JIRA_WEBHOOK_SECRET` | *(secret)* | Shared secret Jira signs webhooks with (required by serve). |
 | `T2P_TRIGGER_LABEL` | `ticket2pr` | Webhook jobs need this label (`run` checks it only with --require-label). |
-| `T2P_GITHUB_TOKEN` | *(secret)* | Fine-grained token: Contents + Pull requests (read/write). Fork mode needs Contents write on the fork and Pull requests write on the target: a token that spans both owners (classic `public_repo`/`repo`, or a GitHub App installed on both). |
-| `T2P_GITHUB_API_URL` | `https://api.github.com` | GitHub Enterprise Server: https://<host>/api/v3 (that exact form). |
-| `T2P_REPOS` | `{}` | Jira project key → GitHub repo, e.g. {"PROJ": "acme/api"}. |
-| `T2P_FORK_OWNER` | *(empty)* | Push branches to <fork_owner>/<repo> (a fork owned by the bot) and open cross-repository PRs. Recommended: a branch pushed to the target repository runs its CI with the repository's secrets before anyone reviews the agent's code. |
+| `T2P_SCM_PROVIDER` | `github` | Where repositories live: github, gitlab, bitbucket (Cloud), bitbucket-server (Data Center), azure (Azure DevOps) or gitea (Gitea, Forgejo). |
+| `T2P_SCM_TOKEN` | *(secret)* | Token that reads and pushes the repositories and opens pull requests (docs/security.md lists the scopes per forge). Also read from T2P_GITHUB_TOKEN. |
+| `T2P_SCM_API_URL` | *(empty)* | API base URL, for self-hosted forges: https://<host>/api/v3 (GitHub Enterprise), https://<host>/api/v4 (GitLab), https://<host>/rest/api/1.0 (Bitbucket Data Center), https://<host>/<collection> (Azure DevOps Server), https://<host>/api/v1 (Gitea, Forgejo; required). Empty: the provider's cloud. |
+| `T2P_REPOS` | `{}` | Jira project key → repository, e.g. {"PROJ": "acme/api"} (group/subgroup/name on GitLab, organization/project/repository on Azure DevOps). |
+| `T2P_FORK_OWNER` | *(empty)* | Push branches to <fork_owner>/<name> (a fork owned by the bot) and open cross-repository pull requests. Recommended: a branch pushed to the target repository runs its CI with the repository's secrets before anyone reviews the agent's code. Not supported with Azure DevOps. |
 | `T2P_BASE_BRANCH` | `main` | Branch to clone and target with PRs. |
 | `T2P_BRANCH_PREFIX` | `ticket2pr/` | Prefix of the branches pushed. |
 | `T2P_COMMIT_AUTHOR_NAME` | `ticket2pr` | Commit author name. |
@@ -35,7 +36,7 @@ name, `ANTHROPIC_API_KEY`, in the environment or in `.env`.
 | `T2P_TEST_COMMAND` | *(empty)* | Overrides auto-detection when set. |
 | `T2P_TEST_TIMEOUT_S` | `900` | Test run limit, in seconds. |
 | `T2P_MAX_CHANGED_FILES` | `25` | Larger changes fail the job instead of opening a PR. |
-| `T2P_PROTECTED_PATHS` | `[".github/", ".git/", "**/.env", "**/*.pem", "**/*.key"]` | Glob patterns never committed; the agent's file tools may not write them (its Bash commands are not checked). |
+| `T2P_PROTECTED_PATHS` | `[".git/", "**/.env", "**/*.pem", "**/*.key", ".github/", ".gitlab-ci.yml", ".gitlab/", "bitbucket-pipelines.yml", "azure-pipelines.yml", ".azure-pipelines/", ".gitea/", ".forgejo/"]` | Glob patterns never committed; the agent's file tools may not write them (its Bash commands are not checked). |
 | `T2P_DRAFT_ON_TEST_FAILURE` | `true` | Open PRs as drafts when the tests fail or are missing. |
 | `T2P_DATA_DIR` | `.ticket2pr` | Job database and workspaces live here. |
 | `T2P_API_TOKEN` | *(secret)* | Bearer token for the /jobs API; empty disables it. |

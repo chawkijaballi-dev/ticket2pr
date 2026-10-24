@@ -12,11 +12,38 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_MODEL = "claude-opus-5-5"
 
-REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-_OWNER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
+# owner/name; GitLab nests groups (group/sub/name); Azure DevOps is org/project/repo, and its
+# project names may hold spaces.
+REPO_RE = re.compile(r"^[A-Za-z0-9_.~-]+(?:/[A-Za-z0-9_.-]+)+$")
+_AZURE_REPO_RE = re.compile(
+    r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?: [A-Za-z0-9_.-]+)*/[A-Za-z0-9_.-]+$"
+)
+# A fork's namespace; Bitbucket Data Center's personal projects start with "~".
+_OWNER_RE = re.compile(r"^~?[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
 _PROJECT_RE = re.compile(r"^[A-Z][A-Z0-9_]+$")
 
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
+ScmProvider = Literal["github", "gitlab", "bitbucket", "bitbucket-server", "azure", "gitea"]
+_DEFAULT_SCM_API = {
+    "github": "https://api.github.com",
+    "gitlab": "https://gitlab.com/api/v4",
+    "bitbucket": "https://api.bitbucket.org/2.0",
+    "azure": "https://dev.azure.com",
+}
+
+
+def repo_error(provider: ScmProvider, repo: str) -> str | None:
+    """Why ``repo`` is not a repository path for ``provider``, or ``None``."""
+    segments = repo.split("/")
+    if any(segment in (".", "..") for segment in segments):
+        return "no . or .. segments"
+    if provider == "azure":
+        return None if _AZURE_REPO_RE.fullmatch(repo) else "want organization/project/repository"
+    if not REPO_RE.fullmatch(repo):
+        return "want owner/name"
+    if provider != "gitlab" and repo.count("/") != 1:  # only GitLab nests groups
+        return "want owner/name"
+    return None
 
 
 class Settings(BaseSettings):
@@ -27,6 +54,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,  # Settings(scm_token=...) as well as its environment aliases
     )
 
     # ── Jira ──────────────────────────────────────────────────────────
@@ -44,26 +72,37 @@ class Settings(BaseSettings):
         description="Webhook jobs need this label (`run` checks it only with --require-label).",
     )
 
-    # ── GitHub ────────────────────────────────────────────────────────
-    github_token: SecretStr = Field(
-        default=SecretStr(""),
-        description="Fine-grained token: Contents + Pull requests (read/write). Fork mode needs "
-        "Contents write on the fork and Pull requests write on the target: a token that spans "
-        "both owners (classic `public_repo`/`repo`, or a GitHub App installed on both).",
+    # ── Source control ────────────────────────────────────────────────
+    scm_provider: ScmProvider = Field(
+        default="github",
+        description="Where repositories live: github, gitlab, bitbucket (Cloud), "
+        "bitbucket-server (Data Center), azure (Azure DevOps) or gitea (Gitea, Forgejo).",
     )
-    github_api_url: str = Field(
-        default="https://api.github.com",
-        description="GitHub Enterprise Server: https://<host>/api/v3 (that exact form).",
+    scm_token: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("T2P_SCM_TOKEN", "T2P_GITHUB_TOKEN"),
+        description="Token that reads and pushes the repositories and opens pull requests "
+        "(docs/security.md lists the scopes per forge). Also read from T2P_GITHUB_TOKEN.",
+    )
+    scm_api_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("T2P_SCM_API_URL", "T2P_GITHUB_API_URL"),
+        description="API base URL, for self-hosted forges: https://<host>/api/v3 (GitHub "
+        "Enterprise), https://<host>/api/v4 (GitLab), https://<host>/rest/api/1.0 (Bitbucket "
+        "Data Center), https://<host>/<collection> (Azure DevOps Server), "
+        "https://<host>/api/v1 (Gitea, Forgejo; required). Empty: the provider's cloud.",
     )
     repos: dict[str, str] = Field(
         default_factory=dict,
-        description='Jira project key → GitHub repo, e.g. {"PROJ": "acme/api"}.',
+        description='Jira project key → repository, e.g. {"PROJ": "acme/api"} '
+        "(group/subgroup/name on GitLab, organization/project/repository on Azure DevOps).",
     )
     fork_owner: str = Field(
         default="",
-        description="Push branches to <fork_owner>/<repo> (a fork owned by the bot) and open "
-        "cross-repository PRs. Recommended: a branch pushed to the target repository runs its "
-        "CI with the repository's secrets before anyone reviews the agent's code.",
+        description="Push branches to <fork_owner>/<name> (a fork owned by the bot) and open "
+        "cross-repository pull requests. Recommended: a branch pushed to the target repository "
+        "runs its CI with the repository's secrets before anyone reviews the agent's code. "
+        "Not supported with Azure DevOps.",
     )
     base_branch: str = Field(default="main", description="Branch to clone and target with PRs.")
     branch_prefix: str = Field(default="ticket2pr/", description="Prefix of the branches pushed.")
@@ -118,7 +157,12 @@ class Settings(BaseSettings):
         default=25, gt=0, description="Larger changes fail the job instead of opening a PR."
     )
     protected_paths: list[str] = Field(
-        default_factory=lambda: [".github/", ".git/", "**/.env", "**/*.pem", "**/*.key"],
+        default_factory=lambda: [
+            *(".git/", "**/.env", "**/*.pem", "**/*.key"),
+            # Each forge's CI configuration: it runs with the repository's secrets.
+            *(".github/", ".gitlab-ci.yml", ".gitlab/", "bitbucket-pipelines.yml"),
+            *("azure-pipelines.yml", ".azure-pipelines/", ".gitea/", ".forgejo/"),
+        ],
         description="Glob patterns never committed; the agent's file tools may not write them "
         "(its Bash commands are not checked).",
     )
@@ -143,12 +187,21 @@ class Settings(BaseSettings):
     @field_validator("repos")
     @classmethod
     def _check_repos(cls, value: dict[str, str]) -> dict[str, str]:
-        for project, repo in value.items():
+        for project in value:
             if not _PROJECT_RE.fullmatch(project):
                 raise ValueError(f"invalid Jira project key: {project!r}")
-            if not REPO_RE.fullmatch(repo):
-                raise ValueError(f"invalid GitHub repo for {project}: {repo!r} (want owner/name)")
         return value
+
+    @model_validator(mode="after")
+    def _check_scm(self) -> Settings:
+        for project, repo in self.repos.items():
+            if error := repo_error(self.scm_provider, repo):
+                raise ValueError(
+                    f"invalid {self.scm_provider} repository for {project}: {repo!r} ({error})"
+                )
+        if self.fork_owner and self.scm_provider == "azure":
+            raise ValueError("T2P_FORK_OWNER is not supported with Azure DevOps")
+        return self
 
     @model_validator(mode="after")
     def _one_worker_without_sandbox(self) -> Settings:
@@ -167,7 +220,7 @@ class Settings(BaseSettings):
     @classmethod
     def _check_fork_owner(cls, value: str) -> str:
         if value and not _OWNER_RE.fullmatch(value):
-            raise ValueError(f"invalid GitHub account name: {value!r}")
+            raise ValueError(f"invalid fork owner: {value!r}")
         return value
 
     @field_validator("data_dir")
@@ -176,10 +229,15 @@ class Settings(BaseSettings):
         # Workspaces are handed to git and to subprocesses with other working directories.
         return value.expanduser().resolve()
 
-    @field_validator("jira_base_url", "github_api_url")
+    @field_validator("jira_base_url", "scm_api_url")
     @classmethod
     def _strip_trailing_slash(cls, value: str) -> str:
         return value.rstrip("/")
+
+    @property
+    def scm_api(self) -> str:
+        """The forge's API base URL: the configured one, or the provider's cloud."""
+        return self.scm_api_url or _DEFAULT_SCM_API.get(self.scm_provider, "")
 
     @property
     def workspaces_dir(self) -> Path:
@@ -190,7 +248,7 @@ class Settings(BaseSettings):
         return self.data_dir / "jobs.sqlite3"
 
     def repo_for(self, ticket_key: str) -> str | None:
-        """Return the GitHub repo configured for the ticket's Jira project, if any."""
+        """Return the repository configured for the ticket's Jira project, if any."""
         project = ticket_key.split("-", 1)[0]
         return self.repos.get(project)
 

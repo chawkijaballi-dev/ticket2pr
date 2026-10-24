@@ -1,7 +1,8 @@
 """Where repositories live and pull requests are opened.
 
-``GitHubHost`` is the production implementation. ``LocalHost`` serves repositories from a
-directory and records "pull requests" as JSON files, for demos and offline evals.
+The forge clients (``ticket2pr.scm.github``, ``gitlab``, ``bitbucket``, ``azure``, ``gitea``)
+are the production implementations. ``LocalHost`` serves repositories from a directory and
+records "pull requests" as JSON files, for demos and offline evals.
 """
 
 from __future__ import annotations
@@ -14,7 +15,6 @@ from typing import Protocol, runtime_checkable
 from ticket2pr.domain import PullRequest
 from ticket2pr.errors import SCMError
 from ticket2pr.scm.git import GitAuth
-from ticket2pr.scm.github import GitHubClient
 
 
 @runtime_checkable
@@ -24,34 +24,21 @@ class RepoHost(Protocol):
     def git_auth(self) -> GitAuth | None: ...
 
     async def open_or_update_pr(
-        self, repo: str, *, head: str, base: str, title: str, body: str, draft: bool
+        self,
+        repo: str,
+        *,
+        source_repo: str,
+        branch: str,
+        base: str,
+        title: str,
+        body: str,
+        draft: bool,
     ) -> PullRequest:
-        """``head`` is a branch of ``repo``, or ``owner:branch`` of a fork (fork mode)."""
+        """Open a pull request from ``source_repo``'s ``branch`` into ``repo``'s ``base``, or
+        refresh the open one. ``source_repo`` is ``repo``, or the bot's fork (fork mode)."""
         ...
 
     async def aclose(self) -> None: ...
-
-
-class GitHubHost:
-    def __init__(self, client: GitHubClient, token: str) -> None:
-        self._client = client
-        self._auth = GitAuth(token=token)
-
-    def clone_url(self, repo: str) -> str:
-        return self._client.clone_url(repo)
-
-    def git_auth(self) -> GitAuth | None:
-        return self._auth
-
-    async def open_or_update_pr(
-        self, repo: str, *, head: str, base: str, title: str, body: str, draft: bool
-    ) -> PullRequest:
-        return await self._client.open_or_update_pr(
-            repo, head=head, base=base, title=title, body=body, draft=draft
-        )
-
-    async def aclose(self) -> None:
-        await self._client.aclose()
 
 
 class LocalHost:
@@ -70,14 +57,23 @@ class LocalHost:
         return None
 
     async def open_or_update_pr(
-        self, repo: str, *, head: str, base: str, title: str, body: str, draft: bool
+        self,
+        repo: str,
+        *,
+        source_repo: str,
+        branch: str,
+        base: str,
+        title: str,
+        body: str,
+        draft: bool,
     ) -> PullRequest:
         prs = self._root / "_prs"
         prs.mkdir(exist_ok=True)
-        slug = re.sub(r"[^A-Za-z0-9._-]", "__", f"{repo}__{head}")
+        slug = re.sub(r"[^A-Za-z0-9._-]", "__", f"{repo}__{source_repo}__{branch}")
         path = prs / f"{slug}.json"
-        record = {"repo": repo, "head": head, "base": base, "title": title, "body": body}
-        path.write_text(json.dumps({**record, "draft": draft}, indent=2), encoding="utf-8")
+        record: dict[str, str | bool] = {"repo": repo, "source_repo": source_repo}
+        record |= {"head": branch, "base": base, "title": title, "body": body, "draft": draft}
+        path.write_text(json.dumps(record, indent=2), encoding="utf-8")
         number = sorted(p.name for p in prs.glob("*.json")).index(path.name) + 1
         return PullRequest(number=number, url=path.as_uri(), draft=draft)
 

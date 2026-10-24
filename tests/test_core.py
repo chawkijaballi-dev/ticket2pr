@@ -75,12 +75,12 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_differently_cased_secrets_are_hidden_too(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Settings read ``t2p_github_token`` as well, so the agent must not see it either."""
-    monkeypatch.setenv("t2p_github_token", "ghp_lowercase_secret")
-    assert Settings(_env_file=None).github_token.get_secret_value() == "ghp_lowercase_secret"
+    """Settings read ``t2p_scm_token`` as well, so the agent must not see it either."""
+    monkeypatch.setenv("t2p_scm_token", "ghp_lowercase_secret")
+    assert Settings(_env_file=None).scm_token.get_secret_value() == "ghp_lowercase_secret"
     monkeypatch.setenv("anthropic_api_key", "sk-lowercase-secret")
     names = secret_env_names()
-    assert "t2p_github_token" in names
+    assert "t2p_scm_token" in names
     assert "anthropic_api_key" in names
     assert "ANTHROPIC_API_KEY" not in names  # Claude Code gets its key under this name
 
@@ -89,6 +89,40 @@ def test_differently_cased_secrets_are_hidden_too(monkeypatch: pytest.MonkeyPatc
 def test_settings_reject_bad_repo_mapping(repos: dict[str, str]) -> None:
     with pytest.raises(ValidationError):
         Settings(repos=repos, _env_file=None)
+
+
+@pytest.mark.parametrize(
+    ("provider", "repo", "ok"),
+    [
+        ("github", "acme/api", True),
+        ("github", "acme/sub/api", False),
+        ("gitlab", "acme/sub/api", True),
+        ("gitlab", "acme/../api", False),
+        ("bitbucket-server", "PROJ/api", True),
+        ("azure", "acme/My Project/api", True),
+        ("azure", "acme/api", False),
+        ("gitea", "acme/api", True),
+    ],
+)
+def test_repository_shape_follows_the_provider(provider: str, repo: str, ok: bool) -> None:
+    if ok:
+        assert Settings(scm_provider=provider, repos={"PROJ": repo}, _env_file=None).repos
+    else:
+        with pytest.raises(ValidationError):
+            Settings(scm_provider=provider, repos={"PROJ": repo}, _env_file=None)
+
+
+def test_scm_settings_defaults_and_aliases(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert Settings(_env_file=None).scm_api == "https://api.github.com"
+    assert Settings(scm_provider="gitlab", _env_file=None).scm_api == "https://gitlab.com/api/v4"
+    assert Settings(scm_provider="gitea", _env_file=None).scm_api == ""  # self-hosted only
+    monkeypatch.setenv("T2P_GITHUB_TOKEN", "legacy-name")
+    monkeypatch.setenv("T2P_GITHUB_API_URL", "https://ghe.test/api/v3/")
+    settings = Settings(_env_file=None)
+    assert settings.scm_token.get_secret_value() == "legacy-name"
+    assert settings.scm_api == "https://ghe.test/api/v3"
+    with pytest.raises(ValidationError, match="Azure DevOps"):
+        Settings(scm_provider="azure", fork_owner="bot", _env_file=None)
 
 
 def test_derived_paths_follow_copies() -> None:
@@ -117,7 +151,7 @@ def test_one_worker_without_sandbox() -> None:
     assert Settings(sandbox=False, workers=4, _env_file=None).workers == 1
 
 
-@pytest.mark.parametrize("owner", ["bad owner", "-dash", "x" * 40])
+@pytest.mark.parametrize("owner", ["bad owner", "-dash", "x" * 101, "a/b"])
 def test_settings_reject_bad_fork_owner(owner: str) -> None:
     with pytest.raises(ValidationError):
         Settings(fork_owner=owner, _env_file=None)
@@ -350,6 +384,7 @@ def test_commit_message_and_title() -> None:
     url = render.pr_title(Ticket(key="PROJ-1", title="Fixes https://github.com/a/b/issues/7"))
     assert "F\u200bixes https://github.com/a/b/issues/7" in url
     assert "G\u200bH-7" in render.pr_title(Ticket(key="PROJ-1", title="See GH-7"))
+    assert "!\u200b12" in render.pr_title(Ticket(key="PROJ-1", title="See !12"))
 
 
 def test_pr_body_contents() -> None:
