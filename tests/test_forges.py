@@ -128,7 +128,7 @@ async def test_bitbucket_cloud_opens_a_pull_request_from_a_fork() -> None:
     create = respx.post(BB).respond(201, json=bb_pr(2, draft=True))
     client = BitbucketCloudClient(token="atok")
     pr = await client.open_or_update_pr(
-        "acme/api", source_repo="bot/api", branch="b", draft=True, **PR
+        "Acme/API", source_repo="Bot/api", branch="b", draft=True, **PR
     )
     assert (pr.number, pr.draft) == (2, True)
     assert 'source.repository.full_name="bot/api"' in lookup.calls.last.request.url.params["q"]
@@ -163,6 +163,7 @@ def bbs_pr(number: int, target: str = "PROJ") -> dict[str, Any]:
     return {
         "id": number,
         "version": 3,
+        "reviewers": [{"user": {"name": "alice"}, "approved": False}],
         "toRef": {
             "id": "refs/heads/main",
             "repository": {"slug": "api", "project": {"key": target}},
@@ -183,7 +184,13 @@ async def test_bitbucket_server_updates_with_the_version() -> None:
     )
     assert pr.number == 8
     assert lookup.calls.last.request.url.params["at"] == "refs/heads/b"
-    assert sent(update) == {"title": "T", "description": "B", "draft": False, "version": 3}
+    assert sent(update) == {
+        "title": "T",
+        "description": "B",
+        "draft": False,
+        "version": 3,
+        "reviewers": [{"user": {"name": "alice"}}],
+    }
     assert client.clone_url("PROJ/api") == "https://bb.acme.test/scm/PROJ/api.git"
     assert client.git_auth() == GitAuth(token="htok", scheme="Bearer")
 

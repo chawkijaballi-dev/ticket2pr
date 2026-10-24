@@ -47,6 +47,8 @@ class BitbucketCloudClient(ForgeClient):
         body: str,
         draft: bool,
     ) -> PullRequest:
+        # Workspace and repository slugs are lower case on Bitbucket Cloud, whatever was typed.
+        repo, source_repo = repo.lower(), source_repo.lower()
         prs = f"/repositories/{path_quote(*repo.split('/'))}/pullrequests"
         # Branch and repository names are restricted to safe characters (config, pipeline).
         query = (
@@ -125,10 +127,18 @@ class BitbucketServerClient(ForgeClient):
         )
         if found is not None:
             path = f"{prs}/{int(found['id'])}"
-            version = {"version": found["version"]}  # optimistic locking
+            kept = {
+                "version": found["version"],  # optimistic locking
+                # Some versions drop the reviewers a PUT leaves out: send them back.
+                "reviewers": [
+                    {"user": {"name": reviewer["user"]["name"]}}
+                    for reviewer in found.get("reviewers", [])
+                    if reviewer.get("user", {}).get("name")
+                ],
+            }
 
             async def update(sent: dict[str, Any]) -> PullRequest:
-                return _server_pr(await self._request("PUT", path, json=sent | version))
+                return _server_pr(await self._request("PUT", path, json=sent | kept))
 
             return await with_draft_fallback(
                 update, payload, draft_key="draft", refused=httpx.codes.BAD_REQUEST
