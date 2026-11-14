@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ── build: resolve dependencies into a virtualenv ─────────────────────
-FROM python:3.12-slim-bookworm AS build
+FROM python:3.15-slim-bookworm AS build
 COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
@@ -14,7 +14,7 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-dev
 # The repositories' tests run with their own toolchain, not ticket2pr's virtualenv: this image
 # ships uv, e.g. `T2P_TEST_COMMAND="uv run --frozen pytest"`. Prefer toolchains and
 # dependencies baked into a derived image over T2P_TEST_NETWORK=true (see docs/security.md).
-FROM python:3.12-slim-bookworm
+FROM python:3.15-slim-bookworm
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates bubblewrap socat \
     && rm -rf /var/lib/apt/lists/*
